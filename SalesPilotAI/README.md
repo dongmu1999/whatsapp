@@ -4,7 +4,7 @@
 
 面向外贸销售人员的 Windows 本地桌面软件。软件仅提供聊天整理、销售分析和回复辅助，不自动发送消息、不自动群发、不读取 WhatsApp 私有数据库、不绕过登录或加密，也不进行后台持续监听。
 
-> 当前严格交付至 **阶段 9：Windows 打包**。已提供 PyInstaller onedir 打包配置、Inno Setup 简体中文安装/卸载脚本、首次启动引导、打包后自检模式和 Windows 一键构建脚本；Windows EXE 与安装包需在 Windows 10/11 构建机上生成。
+> 当前严格交付至 **阶段 9：Windows 打包**。已提供 PyInstaller onedir 打包配置、Inno Setup 简体中文安装/卸载脚本、首次启动引导、打包后自检模式和 Windows 一键构建脚本；当前工作区已生成 Windows x64 EXE（`dist/SalesPilotAI/SalesPilotAI.exe`），安装包需在 Windows 10/11 构建机上生成。
 
 ## 阶段 1 已完成
 
@@ -184,11 +184,12 @@
 ### Windows EXE 与安装程序
 
 - 提供 PyInstaller **onedir** 配置 `packaging/SalesPilotAI.spec`，入口为 `main.py`，输出 `dist/SalesPilotAI/SalesPilotAI.exe` 及 `_internal` 运行时目录。
+- 当前工作区已用 Wine64 + Windows Python 3.12.10 实际生成 Windows x64 EXE：PE32+ GUI、13 MB，完整目录约 90 MB，版本资源 1.0.0 和应用图标已核验。
 - 打包时包含 `assets`（主题 QSS 与图标），使用 `sys._MEIPASS` 定位只读资源；用户数据库、日志、备份和知识库仍写入独立数据目录，不写入安装目录。
 - 排除 PaddleOCR/PaddlePaddle、PyTorch、pytest、其他 Qt 绑定等可选或开发组件；OCR 仍按需延迟导入，未安装时不影响手动粘贴与本地保存。
 - 提供 Inno Setup 6.5+ 简体中文安装脚本 `packaging/installer.iss`：按当前用户安装、无需管理员权限，创建开始菜单快捷方式、可选桌面快捷方式和卸载程序。
 - 卸载程序删除安装目录中的应用文件，但**不删除** `%LOCALAPPDATA%\SalesPilotAI` 下的客户数据库、日志、备份、知识库副本和凭据；需要彻底删除时应先在软件内使用“清空全部数据”并手动处理数据目录。
-- 安装包输出目标为 `dist/installer/SalesPilotAI-Setup-1.0.0.exe`，包含 EXE 版本信息和应用图标；该文件需在 Windows 构建机上生成。
+- 安装包输出目标为 `dist/installer/SalesPilotAI-Setup-1.0.0.exe`，包含 EXE 版本信息和应用图标；当前**未生成安装包**，因为 Inno Setup 的 `ISCC.exe` 为 32 位程序，而当前 Linux 内核未启用 32 位执行。按你的选择仅保留 EXE 产物，安装包配置保留给 Windows 构建机。
 - 新增 `scripts/build_windows.ps1` 与 `scripts/build_windows.bat`：创建独立构建虚拟环境、安装依赖、运行测试、执行 PyInstaller、以 `--smoke-test` 启动打包后的 EXE 并检查数据库初始化，最后调用 ISCC 生成安装包。
 
 ### 首次启动与本地数据库
@@ -201,12 +202,14 @@
 ### 构建与验证边界
 
 - 本次在 Linux 环境完成了 PyInstaller onedir 实际构建，并用打包产物执行 `--smoke-test`，验证入口、Qt 依赖、资源定位和数据库初始化。
-- PyInstaller **不能跨平台生成 Windows EXE**，Inno Setup 也仅能在 Windows 上运行；本仓库不包含预编译的 Windows 安装包，需按下方步骤在 Windows 构建机生成。
+- 另外通过 Wine64 + Windows Python 3.12.10 + PySide6 6.12.0 + PyInstaller 6.22.3 生成了 Windows x64 EXE；已核验 PE32+ GUI 架构、版本资源、图标和 `_internal` 依赖，但**尚未在真实 Windows 上运行**。
+- Windows EXE 的 `--smoke-test` 在 Wine 中启动失败：Wine 缺少 Qt 6.12 依赖的 `icuuc.dll`，报错为 `DLL load failed while importing QtWidgets: Module not found`。这是 Wine 运行时缺失，不能等同于真实 Windows 失败，但也意味着运行时验收仍未完成。
+- PyInstaller **不能跨平台生成 Windows EXE**（本次通过 Wine64 运行 Windows Python 实现）；Inno Setup 在当前内核无法执行，**未生成安装包**。安装包需按下方步骤在 Windows 构建机生成。
 - 源码测试覆盖打包文件存在性、版本一致性、安装器中文/按用户/保留用户数据、spec 资源与排除项、冻结资源路径、`--smoke-test` 数据库初始化及首次引导流程；Windows 安装/卸载本身仍需真实 Windows 人工验收。
 
 ## 尚未实现
 
-- 仓库当前未附带预编译的 Windows EXE/安装包；需要在 Windows 10/11 构建机上运行 `scripts/build_windows.ps1` 生成。
+- 仓库当前附带已生成的 Windows x64 EXE 目录（`dist/SalesPilotAI`），但未附带安装包；安装包需在 Windows 10/11 构建机上运行 `scripts/build_windows.ps1` 生成。
 - 代码签名、自动更新、崩溃上报、系统托盘常驻和安装包多语言尚未实现；未签名的 EXE 可能触发 Windows SmartScreen 提示。
 
 ## 运行环境
@@ -488,9 +491,11 @@ SalesPilotAI/
 - `main.py --smoke-test` 离屏启动冒烟：退出码 **0**，自动创建 `salespilot.db`（200,704 字节）。
 - 阶段 8 离屏端到端冒烟：创建客户和知识库文件 → 备份 → 新增客户 → 恢复 → 客户数据与知识库回退、工作台刷新 → 清空全部数据，退出码 **0**。
 - PyInstaller 6.17.0 在 Linux 上按 `packaging/SalesPilotAI.spec` 实际完成 **onedir** 构建（约 246 MB），打包产物执行 `--smoke-test` 退出码 **0**，并确认 `_internal/assets/salespilot.ico` 被正确打入。
+- 另用 Wine64 9.0 + Windows Python 3.12.10 + PySide6 6.12.0 + PyInstaller 6.22.3 实际生成 Windows x64 EXE：`dist/SalesPilotAI/SalesPilotAI.exe` 为 PE32+ GUI、Machine `0x8664`、13 MB，完整目录约 90 MB；`FileVersion`/`ProductVersion` 为 1.0.0，应用图标已打入。
+- Windows EXE 在 Wine 中执行 `--smoke-test` 失败：Wine 缺少 Qt 6.12 依赖的 `icuuc.dll`，报错 `DLL load failed while importing QtWidgets: Module not found`；因此 Windows 运行时尚未验收。
 - 1366×768 离屏窗口中，8 项导航、设置页可滚动布局、备份/恢复/隐私控件、阶段 9 标识、首次启动引导、原有聊天分析页、客户历史、产品知识库、跟进任务、AI 模型设置和空状态检查通过。
 - `pip check`：**No broken requirements found**。
-- 验证环境：Linux、Python 3.14.8、PySide6 6.11.3、PyInstaller 6.17.0、openpyxl 3.1.5、mss 10.1.0、OpenAI SDK 2.54.0、Pydantic 2.13.4、keyring 25.7.0、pypdf 6.16.2、python-docx 1.2.0、SQLite FTS5（trigram）。
+- 验证环境：Linux、Python 3.14.8、PySide6 6.11.3、PyInstaller 6.17.0、openpyxl 3.1.5、mss 10.1.0、OpenAI SDK 2.54.0、Pydantic 2.13.4、keyring 25.7.0、pypdf 6.16.2、python-docx 1.2.0、SQLite FTS5（trigram）。Windows EXE 交叉构建使用 Wine 9.0、Windows Python 3.12.10、PySide6 6.12.0、PyInstaller 6.22.3。
 
 ### 真实平台与 API 验证限制
 
@@ -503,9 +508,10 @@ SalesPilotAI/
 - 聊天保留期限使用 UTC 文本比较，已由固定时间测试覆盖，但**尚未**在真实长期数据、系统时区变更、夏令时和跨年数据下验收自动清理。
 - 临时截图清理基于系统临时目录和文件修改时间，**尚未**验证文件被其他程序占用、权限不足或临时目录被安全软件重定向时的行为。
 - 清空全部数据会删除知识库记录和文件副本，已由测试覆盖；**尚未**在真实用户数据上执行人工验收，也未提供回收站式恢复。
-- **尚未生成或验证 Windows EXE/安装包**：本次只在 Linux 上用 PyInstaller 构建 onedir 并运行打包产物；PyInstaller 不能跨平台产出 Windows EXE，当前环境也没有 Inno Setup/Wine。必须在 Windows 10/11 构建机执行 `scripts/build_windows.ps1` 后验收。
+- **Windows EXE 已生成但未完成运行时验证**：EXE 由 Wine64 + Windows Python 生成，已核验 PE 架构、版本资源和图标；因 Wine 缺少 `icuuc.dll`，`--smoke-test` 未能启动 Qt。必须在真实 Windows 10/11 上运行 `dist/SalesPilotAI/SalesPilotAI.exe --smoke-test` 并人工验收。
+- **尚未生成安装包**：Inno Setup 的 `ISCC.exe` 是 32 位程序，当前 Linux 内核未启用 32 位执行，无法在 Wine 中编译；按当前选择仅保留 EXE 产物，安装包需在 Windows 构建机运行 `scripts/build_windows.ps1` 生成。
 - **尚未**在真实 Windows 上验证安装目录、开始菜单/桌面快捷方式、按用户安装、覆盖升级、卸载、SmartScreen 提示、文件占用导致升级失败，以及 `%LOCALAPPDATA%\Programs` 权限策略；安装器与卸载器也未做数字签名。
-- `--smoke-test` 的打包验证在 Linux 产物上通过，但**尚未**在 Windows 打包产物上执行；首次启动引导与 `--smoke-test` 的交互也只由离屏测试覆盖。
+- `--smoke-test` 在 Linux 产物上通过；Windows EXE 的 Wine 自检因缺少 `icuuc.dll` 失败，**尚未**在真实 Windows 上执行，首次启动引导与 `--smoke-test` 的交互也只由离屏测试覆盖。
 - **尚未**验证 Windows 打包产物中的 pywinauto/UIA、keyring Windows 凭据后端、mss 截图、全局快捷键和 PaddleOCR；打包时已排除 OCR 可选组件，若这些平台能力不可用，应回退到手动粘贴和本地保存。
 - 全局未捕获异常钩子与统一日志**尚未**在真实 Windows 桌面中验证；代码签名、自动更新、崩溃上报和系统托盘尚未实现。
 - **尚未**使用真实 DeepSeek 账户验证 AI 给出的跟进天数是否合理，也未验证真实模型在“是否需要跟进”上的稳定性；fake 测试只验证字段范围、草稿转换和人工创建流程。
