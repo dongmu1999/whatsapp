@@ -116,6 +116,22 @@ Function CheckAppRunning
   done:
 FunctionEnd
 
+Function CheckInstallDirWritable
+  IfFileExists "$INSTDIR\_internal\VCRUNTIME140.dll" 0 done
+  ClearErrors
+  FileOpen $0 "$INSTDIR\_internal\VCRUNTIME140.dll" a
+  IfErrors locked
+  FileClose $0
+  Goto done
+
+  locked:
+  StrCpy $INSTDIR "$LOCALAPPDATA\Programs\SalesPilotAI-1.0.0"
+  IfSilent +2
+  MessageBox MB_ICONINFORMATION "检测到旧安装目录中的文件被占用，本次将安装到：$\r$\n$INSTDIR$\r$\n$\r$\n原有客户数据和备份不会受到影响。"
+
+  done:
+FunctionEnd
+
 Function .onInit
   ${IfNot} ${RunningX64}
     MessageBox MB_ICONSTOP "本安装包仅支持 64 位 Windows 10/11。"
@@ -123,6 +139,7 @@ Function .onInit
   ${EndIf}
   SetShellVarContext current
   Call CheckAppRunning
+  Call CheckInstallDirWritable
 FunctionEnd
 
 Section "Uninstall"

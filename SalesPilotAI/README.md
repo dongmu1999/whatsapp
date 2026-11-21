@@ -191,6 +191,7 @@
 - 当前安装包由 Linux 原生 `makensis` 3.09 编译 `packaging/installer.nsi` 生成；NSIS 安装器本身是 32 位引导程序，但可在 64 位 Windows 10/11 的 WOW64 子系统中正常运行。
 - 卸载程序删除安装目录中的应用文件，但**不删除** `%LOCALAPPDATA%\SalesPilotAI` 下的客户数据库、日志、备份、知识库副本和凭据；需要彻底删除时应先在软件内使用“清空全部数据”并手动处理数据目录。
 - 安装器启动时会检测 `SalesPilotAI.exe` 是否正在运行；若被占用，会提示先在任务管理器中结束进程并重试，避免覆盖 `_internal` 中的 DLL 失败。
+- 若旧安装目录中的 `VCRUNTIME140.dll` 仍被其他程序或安全软件锁定，安装器会提示并自动改装到 `%LOCALAPPDATA%\Programs\SalesPilotAI-1.0.0`，不会删除用户数据。
 - 安装包已生成至 `dist/installer/SalesPilotAI-Setup-1.0.0.exe`（约 39 MB），包含 EXE 版本信息、应用图标、主程序、`_internal` 运行时和卸载程序。
 - Inno Setup 的 `ISCC.exe` 是 32 位程序，当前 Linux 内核未启用 32 位执行，无法运行；因此本次使用 Linux 原生 NSIS 生成安装包，Inno 配置保留给 Windows 构建机。
 - 新增 `scripts/build_windows.ps1` 与 `scripts/build_windows.bat`：创建独立构建虚拟环境、安装依赖、运行测试、执行 PyInstaller、以 `--smoke-test` 启动打包后的 EXE 并检查数据库初始化，最后调用 ISCC 生成安装包。
