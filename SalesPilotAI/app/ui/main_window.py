@@ -19,8 +19,11 @@ from PySide6.QtWidgets import (
 
 from app.config import APP_NAME, APP_NAME_ZH, APP_VERSION, get_data_dir
 from app.database.connection import Database
+from app.database.repositories.customer_repository import CustomerRepository
 from app.database.repositories.dashboard_repository import DashboardRepository
 from app.database.repositories.settings_repository import SettingsRepository
+from app.services.customer_service import CustomerService
+from app.ui.customer_page import CustomerPage
 from app.ui.dashboard import DashboardPage
 from app.ui.placeholder_page import PlaceholderPage
 from app.ui.settings_page import SettingsPage
@@ -99,7 +102,7 @@ class MainWindow(QMainWindow):
         safety.setWordWrap(True)
         safety.setContentsMargins(22, 8, 16, 8)
         sidebar_layout.addWidget(safety)
-        version = QLabel(f"V{APP_VERSION} · 阶段 1")
+        version = QLabel(f"V{APP_VERSION} · 阶段 2")
         version.setObjectName("sidebarVersion")
         version.setContentsMargins(22, 0, 12, 0)
         sidebar_layout.addWidget(version)
@@ -146,9 +149,14 @@ class MainWindow(QMainWindow):
                 "分析前会明确提示上传范围并提供脱敏选项。",
             )
         )
-        self.pages.addWidget(
-            PlaceholderPage("客户管理", "将在阶段 2 实现", "新增、编辑、搜索、筛选、导入和导出本地客户档案。")
+        self.customer_page = CustomerPage(
+            CustomerService(CustomerRepository(self.database))
         )
+        self.customer_page.customers_changed.connect(self.dashboard.refresh)
+        self.customer_page.status_message.connect(
+            lambda message: self.statusBar().showMessage(message, 5000)
+        )
+        self.pages.addWidget(self.customer_page)
         self.pages.addWidget(
             PlaceholderPage("客户历史记录", "将在阶段 5 实现", "按客户隔离保存历史沟通、分析结果与经确认的长期记忆。")
         )
@@ -173,6 +181,8 @@ class MainWindow(QMainWindow):
         self.topbar_title.setText(self.NAVIGATION[index])
         if index == 0:
             self.dashboard.refresh()
+        elif index == 2:
+            self.customer_page.refresh()
 
     def set_theme(self, theme: str) -> None:
         if theme not in VALID_THEMES:

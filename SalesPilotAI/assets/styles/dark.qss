@@ -107,6 +107,15 @@ QPushButton#primaryButton {
 QPushButton#primaryButton:hover {
     background: #5289f2;
 }
+QPushButton#dangerButton {
+    color: #ffb4ab;
+    background: #342128;
+    border-color: #70414a;
+}
+QPushButton#dangerButton:hover {
+    background: #492832;
+    border-color: #a55e68;
+}
 QPushButton#themeButton {
     color: #cbd5e1;
     background: #202d41;
@@ -141,7 +150,10 @@ QLabel#emptyState {
     border: 1px dashed #314158;
     border-radius: 7px;
 }
-QComboBox, QLineEdit {
+QDialog {
+    background: #111827;
+}
+QComboBox, QLineEdit, QPlainTextEdit, QSpinBox {
     background: #111b2b;
     color: #dbe5f0;
     border: 1px solid #35445a;
@@ -149,7 +161,7 @@ QComboBox, QLineEdit {
     padding: 7px 9px;
     min-width: 220px;
 }
-QComboBox:focus, QLineEdit:focus {
+QComboBox:focus, QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus {
     border-color: #5b8def;
 }
 QComboBox::drop-down {
