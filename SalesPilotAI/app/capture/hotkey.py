@@ -103,7 +103,8 @@ class GlobalHotkeyManager(QObject):
             ]
 
         user32 = ctypes.WinDLL("user32", use_last_error=True)
-        self._thread_id = user32.GetCurrentThreadId()
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        self._thread_id = kernel32.GetCurrentThreadId()
         registered = False
         try:
             registered = bool(

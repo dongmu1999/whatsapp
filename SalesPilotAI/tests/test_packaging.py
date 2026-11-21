@@ -19,6 +19,7 @@ def test_packaging_files_exist():
         "requirements-build.txt",
         "packaging/SalesPilotAI.spec",
         "packaging/installer.iss",
+        "packaging/installer.nsi",
         "packaging/version_info.txt",
         "packaging/ChineseSimplified.isl",
         "scripts/build_windows.ps1",
@@ -58,6 +59,21 @@ def test_installer_is_chinese_per_user_and_keeps_user_data():
     assert "CloseApplications=yes" in installer
     assert "UninstallDelete" not in installer
     assert "LOCALAPPDATA" not in installer
+
+
+def test_nsis_installer_is_chinese_per_user_and_keeps_user_data():
+    installer = _read(PACKAGING / "installer.nsi")
+
+    assert "Unicode true" in installer
+    assert 'MUI_LANGUAGE "SimpChinese"' in installer
+    assert "RequestExecutionLevel user" in installer
+    assert "$LOCALAPPDATA\\Programs\\SalesPilotAI" in installer
+    assert "WriteUninstaller" in installer
+    assert "CreateShortCut" in installer
+    assert 'RMDir /r "$INSTDIR\\_internal"' in installer
+    assert "RunningX64" in installer
+    assert "%LOCALAPPDATA%\\SalesPilotAI" in installer
+    assert '!define MyAppVersion "1.0.0"' in installer
 
 
 def test_pyinstaller_spec_bundles_assets_and_excludes_optional_ocr():
