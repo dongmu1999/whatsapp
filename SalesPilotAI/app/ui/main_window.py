@@ -29,14 +29,18 @@ from app.database.repositories.analysis_repository import (
 )
 from app.database.repositories.customer_repository import CustomerRepository
 from app.database.repositories.dashboard_repository import DashboardRepository
+from app.database.repositories.history_repository import HistoryRepository
+from app.database.repositories.memory_repository import MemoryRepository
 from app.database.repositories.settings_repository import SettingsRepository
 from app.services.ai_settings_service import AISettingsService
 from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
 from app.services.deepseek_service import DeepSeekClient
+from app.services.memory_service import MemoryService
 from app.services.sales_advisor_service import SalesAdvisorService
 from app.ui.ai_settings_page import AISettingsPage
 from app.ui.chat_analysis_page import ChatAnalysisPage
+from app.ui.customer_history_page import CustomerHistoryPage
 from app.ui.customer_page import CustomerPage
 from app.ui.dashboard import DashboardPage
 from app.ui.placeholder_page import PlaceholderPage
@@ -118,7 +122,7 @@ class MainWindow(QMainWindow):
         safety.setWordWrap(True)
         safety.setContentsMargins(22, 8, 16, 8)
         sidebar_layout.addWidget(safety)
-        version = QLabel(f"V{APP_VERSION} · 阶段 4")
+        version = QLabel(f"V{APP_VERSION} · 阶段 5")
         version.setObjectName("sidebarVersion")
         version.setContentsMargins(22, 0, 12, 0)
         sidebar_layout.addWidget(version)
@@ -161,6 +165,9 @@ class MainWindow(QMainWindow):
         ai_settings_service = AISettingsService(self.settings)
         deepseek_client = DeepSeekClient(ai_settings_service)
         usage_repository = APIUsageRepository(self.database)
+        memory_service = MemoryService(
+            MemoryRepository(self.database), HistoryRepository(self.database)
+        )
         self.chat_analysis_page = ChatAnalysisPage(
             ConversationService(self.database),
             customer_service,
@@ -169,6 +176,7 @@ class MainWindow(QMainWindow):
             analysis_repository=AnalysisRepository(self.database),
             usage_repository=usage_repository,
             ai_settings_service=ai_settings_service,
+            memory_service=memory_service,
         )
         self.pages.addWidget(self.chat_analysis_page)
         self.customer_page = CustomerPage(customer_service)
@@ -177,9 +185,11 @@ class MainWindow(QMainWindow):
             lambda message: self.statusBar().showMessage(message, 5000)
         )
         self.pages.addWidget(self.customer_page)
-        self.pages.addWidget(
-            PlaceholderPage("客户历史记录", "将在阶段 5 实现", "按客户隔离保存历史沟通、分析结果与经确认的长期记忆。")
+        self.customer_history_page = CustomerHistoryPage(customer_service, memory_service)
+        self.customer_history_page.status_message.connect(
+            lambda message: self.statusBar().showMessage(message, 5000)
         )
+        self.pages.addWidget(self.customer_history_page)
         self.pages.addWidget(
             PlaceholderPage("产品知识库", "将在阶段 6 实现", "导入产品文档并通过 SQLite FTS5 检索相关资料。")
         )
@@ -203,6 +213,12 @@ class MainWindow(QMainWindow):
             lambda: self.navigation.setCurrentRow(1)
         )
         self.chat_analysis_page.analysis_completed.connect(self.dashboard.refresh)
+        self.chat_analysis_page.analysis_completed.connect(
+            self.customer_history_page.refresh_customers
+        )
+        self.customer_page.customers_changed.connect(
+            self.customer_history_page.refresh_customers
+        )
         self.hotkey_manager = GlobalHotkeyManager(self)
         self.hotkey_manager.triggered.connect(
             lambda _sequence: self.chat_analysis_page.capture_current_chat()
@@ -224,6 +240,8 @@ class MainWindow(QMainWindow):
             self.chat_analysis_page.refresh_customers()
         elif index == 2:
             self.customer_page.refresh()
+        elif index == 3:
+            self.customer_history_page.refresh_customers()
 
     def set_capture_hotkey(self, sequence: str) -> None:
         if sys.platform != "win32":

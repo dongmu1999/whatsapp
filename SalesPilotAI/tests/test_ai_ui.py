@@ -12,6 +12,8 @@ from app.database.repositories.analysis_repository import (
     APIUsageRepository,
 )
 from app.database.repositories.customer_repository import CustomerRepository
+from app.database.repositories.history_repository import HistoryRepository
+from app.database.repositories.memory_repository import MemoryRepository
 from app.database.repositories.settings_repository import SettingsRepository
 from app.models.analysis import AnalysisParseError, SalesAnalysis
 from app.services.ai_settings_service import AISettingsService
@@ -19,6 +21,7 @@ from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
 from app.services.deepseek_service import ConnectionTestResult, DeepSeekAPIError
 from app.services.sales_advisor_service import AnalysisRunResult
+from app.services.memory_service import MemoryService
 from app.ui.ai_settings_page import AISettingsPage
 from app.ui.analysis_result import AnalysisResultWidget
 from app.ui.chat_analysis_page import ChatAnalysisPage
@@ -113,7 +116,7 @@ def test_main_window_integrates_phase_four_pages(
         assert window.pages.widget(6) is window.ai_settings_page
         assert window.chat_analysis_page.analysis_service is not None
         version = window.findChild(QLabel, "sidebarVersion")
-        assert "阶段 4" in version.text()
+        assert "阶段 5" in version.text()
     finally:
         window.close()
 
@@ -197,6 +200,9 @@ def _make_analysis_page(database, advisor):
         analysis_repository=AnalysisRepository(database),
         usage_repository=APIUsageRepository(database),
         ai_settings_service=settings_service,
+        memory_service=MemoryService(
+            MemoryRepository(database), HistoryRepository(database)
+        ),
     )
     customer = customer_service.create({"name": "Alice", "company_name": "ACME GmbH"})
     page.refresh_customers()
@@ -271,6 +277,49 @@ def test_analysis_confirmation_success_persists_and_reuses_conversation(
     ).fetchone()[0] == 1
     assert database.connection.execute("SELECT COUNT(*) FROM analyses").fetchone()[0] == 2
     assert advisor.calls[0][1] == advisor.calls[1][1]
+    page.close()
+
+
+def test_analysis_saves_memory_suggestions_as_pending(application, database, monkeypatch):
+    class MemoryAdvisor(FakeAdvisor):
+        def analyze(self, customer_id, conversation_id, messages, **options):
+            base = super().analyze(customer_id, conversation_id, messages, **options)
+            data = payload()
+            data["memory_suggestions"] = [
+                {
+                    "category": "purchase_plan",
+                    "content": "计划本季度采购 500 件",
+                    "evidence": "客户消息提到 500 units",
+                }
+            ]
+            return AnalysisRunResult(
+                customer_id=base.customer_id,
+                conversation_id=base.conversation_id,
+                analysis=SalesAnalysis.model_validate(data),
+                raw_response=json.dumps(data),
+                api_calls=base.api_calls,
+            )
+
+    page, customer = _make_analysis_page(database, MemoryAdvisor())
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *args, **kwargs: QMessageBox.StandardButton.Yes
+    )
+    completed = QSignalSpy(page.analysis_completed)
+
+    assert page.start_analysis()
+    _wait_for_signal(application, completed)
+    application.processEvents()
+
+    row = database.connection.execute(
+        "SELECT customer_id, category, content, source, status FROM customer_memories"
+    ).fetchone()
+    assert tuple(row) == (
+        customer.id,
+        "purchase_plan",
+        "计划本季度采购 500 件",
+        "ai_suggested",
+        "pending",
+    )
     page.close()
 
 

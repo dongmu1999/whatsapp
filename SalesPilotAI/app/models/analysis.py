@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from app.models.memory import MemorySuggestion
+
 ReplyType = Literal["professional", "sales_driven", "relationship_building"]
 REPLY_TYPES = ("professional", "sales_driven", "relationship_building")
 
@@ -52,6 +54,7 @@ class SalesAnalysis(BaseModel):
     followup_required: bool
     followup_suggestion: str
     unknown_information: list[str]
+    memory_suggestions: list[MemorySuggestion] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_reply_types(self):

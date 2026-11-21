@@ -55,7 +55,7 @@ class SettingsPage(QWidget):
         data_path.setObjectName("dataPath")
         form.addRow("本地数据目录", data_path)
 
-        version = QLabel(f"SalesPilot AI V{APP_VERSION} · 阶段 4")
+        version = QLabel(f"SalesPilot AI V{APP_VERSION} · 阶段 5")
         form.addRow("当前版本", version)
         layout.addWidget(card)
 

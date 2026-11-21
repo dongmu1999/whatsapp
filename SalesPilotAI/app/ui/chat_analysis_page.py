@@ -74,6 +74,7 @@ class ChatAnalysisPage(QWidget):
         analysis_repository=None,
         usage_repository=None,
         ai_settings_service=None,
+        memory_service=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -85,6 +86,7 @@ class ChatAnalysisPage(QWidget):
         self.analysis_repository = analysis_repository
         self.usage_repository = usage_repository
         self.ai_settings_service = ai_settings_service
+        self.memory_service = memory_service
         self.current_source = "manual"
         self.may_be_incomplete = True
         self.current_conversation_id = None
@@ -634,9 +636,27 @@ class ChatAnalysisPage(QWidget):
             self._set_status(detail)
             self.analysis_failed.emit(detail)
             return
+        suggestion_failed = False
+        if self.memory_service is not None and result.analysis.memory_suggestions:
+            try:
+                self.memory_service.record_suggestions(
+                    result.customer_id, result.analysis.memory_suggestions
+                )
+            except (sqlite3.Error, ValueError):
+                logger.exception("保存客户记忆建议失败")
+                suggestion_failed = True
         self.analysis_result.set_analysis(result.analysis)
         self._show_analysis_usage(result.api_calls)
-        self._set_status("AI 分析与三种回复已保存到本地。英文回复可编辑并复制，不会自动发送。")
+        if suggestion_failed:
+            note = " 分析已保存，但客户记忆建议写入失败。"
+        elif result.analysis.memory_suggestions:
+            note = " 客户记忆建议已加入待确认列表。"
+        else:
+            note = ""
+        self._set_status(
+            "AI 分析与三种回复已保存到本地。"
+            f"{note}英文回复可编辑并复制，不会自动发送。"
+        )
         self.analysis_completed.emit()
 
     def _analysis_error(self, error: Exception) -> None:
