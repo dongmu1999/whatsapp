@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 
 from PySide6.QtCore import QThreadPool, Qt, Signal
@@ -20,6 +21,8 @@ from PySide6.QtWidgets import (
 
 from app.services.ai_settings_service import CredentialStoreError, DeepSeekConfig
 from app.ui.workers import FunctionWorker
+
+logger = logging.getLogger(__name__)
 
 
 class AISettingsPage(QWidget):
@@ -153,9 +156,15 @@ class AISettingsPage(QWidget):
     def test_connection(self) -> None:
         if self._active_worker is not None:
             return
+        try:
+            config = self.service.load(include_api_key=True)
+        except Exception as exc:
+            logger.exception("读取 DeepSeek 连接配置失败")
+            self.status_label.setText(f"读取 DeepSeek 配置失败：{exc}")
+            return
         self.test_button.setEnabled(False)
         self.status_label.setText("正在测试 DeepSeek 连接…")
-        worker = FunctionWorker(self.client.test_connection)
+        worker = FunctionWorker(lambda: self.client.test_connection(config))
         self._active_worker = worker
         worker.signals.result.connect(self._connection_succeeded)
         worker.signals.error.connect(self._connection_failed)
@@ -168,11 +177,17 @@ class AISettingsPage(QWidget):
         self.usage_label.setText(self._usage_text(result.stats))
 
     def _connection_failed(self, error: Exception) -> None:
+        logger.error("DeepSeek 连接测试失败", exc_info=error)
         stats = getattr(error, "stats", None)
         if stats is not None:
             self.usage_repository.record(stats)
             self.usage_label.setText(self._usage_text(stats))
-        detail = str(error) if error.__class__.__name__ == "DeepSeekAPIError" else "连接测试失败，请检查配置和网络。"
+        if isinstance(error, (CredentialStoreError, sqlite3.Error)):
+            detail = f"读取 DeepSeek 配置失败：{error}"
+        elif error.__class__.__name__ == "DeepSeekAPIError":
+            detail = str(error)
+        else:
+            detail = "连接测试失败，请检查配置和网络。"
         self.status_label.setText(detail)
 
     def _connection_done(self) -> None:

@@ -595,6 +595,12 @@ class ChatAnalysisPage(QWidget):
         if answer != QMessageBox.StandardButton.Yes:
             self._set_status("已取消 AI 分析；未上传消息，也未新增本地会话。")
             return False
+        try:
+            request_config = self.ai_settings_service.load(include_api_key=True)
+        except Exception as exc:
+            logger.exception("读取 DeepSeek 分析配置失败")
+            self._set_status(f"读取 DeepSeek 配置失败：{exc}")
+            return False
         if not self._ensure_conversation_saved(customer_id, messages):
             return False
 
@@ -614,6 +620,7 @@ class ChatAnalysisPage(QWidget):
                 redact=redact,
                 advanced=advanced,
                 knowledge_snippets=knowledge_snippets,
+                config=request_config,
             )
         )
         self._active_worker = worker

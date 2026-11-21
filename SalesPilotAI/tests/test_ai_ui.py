@@ -57,9 +57,11 @@ class FakeConnectionClient:
         self.settings_service = None
         self.outcome = outcome
         self.thread_ids = []
+        self.configs = []
 
-    def test_connection(self):
+    def test_connection(self, config=None):
         self.thread_ids.append(threading.get_ident())
+        self.configs.append(config)
         if isinstance(self.outcome, Exception):
             raise self.outcome
         return self.outcome
@@ -122,7 +124,9 @@ def test_main_window_integrates_phase_four_pages(
 
 
 def test_ai_settings_connection_uses_worker_and_records_usage(application, database):
-    service = AISettingsService(SettingsRepository(database), FakeCredentials())
+    credentials = FakeCredentials()
+    credentials.value = "sk-main-thread"
+    service = AISettingsService(SettingsRepository(database), credentials)
     client = FakeConnectionClient(ConnectionTestResult("连接成功", stats()))
     page = AISettingsPage(service, client, APIUsageRepository(database))
     finished = QSignalSpy(page.connection_finished)
@@ -132,6 +136,7 @@ def test_ai_settings_connection_uses_worker_and_records_usage(application, datab
     _wait_for_signal(application, finished)
     application.processEvents()
     assert client.thread_ids[0] != threading.get_ident()
+    assert client.configs[0].api_key == "sk-main-thread"
     assert "连接成功" in page.status_label.text()
     assert "30" in page.usage_label.text()
     usage = database.connection.execute("SELECT * FROM api_usage").fetchone()

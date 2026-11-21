@@ -43,14 +43,18 @@ class SalesAdvisorService:
         redact: bool = True,
         advanced: bool = False,
         knowledge_snippets: list[KnowledgeSnippet] | None = None,
+        config=None,
     ) -> AnalysisRunResult:
         if not messages:
             raise ValueError("至少需要一条预览消息才能进行 AI 分析")
         prepared = redact_messages(messages, [company_name] if company_name else []) if redact else list(messages)
         request_messages = self._build_request(prepared, knowledge_snippets or [])
         api_calls = []
+        request_options = {"advanced": advanced}
+        if config is not None:
+            request_options["config"] = config
         try:
-            first = self.client.complete_json(request_messages, advanced=advanced)
+            first = self.client.complete_json(request_messages, **request_options)
         except DeepSeekAPIError as exc:
             self._attach_context(exc, customer_id, conversation_id, api_calls, "")
             raise
@@ -70,7 +74,7 @@ class SalesAdvisorService:
                 },
             ]
         try:
-            second = self.client.complete_json(repair_messages, advanced=advanced)
+            second = self.client.complete_json(repair_messages, **request_options)
         except DeepSeekAPIError as exc:
             self._attach_context(exc, customer_id, conversation_id, api_calls, first.content)
             raise

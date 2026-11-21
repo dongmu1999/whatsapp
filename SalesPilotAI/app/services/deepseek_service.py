@@ -56,8 +56,9 @@ class DeepSeekClient:
             timeout=config.timeout,
         )
 
-    def test_connection(self) -> ConnectionTestResult:
-        config = self.settings_service.load(include_api_key=True)
+    def test_connection(self, config=None) -> ConnectionTestResult:
+        if config is None:
+            config = self.settings_service.load(include_api_key=True)
         self._require_key(config)
         response, stats = self._request(
             config,
@@ -68,8 +69,11 @@ class DeepSeekClient:
         self._content(response, stats)
         return ConnectionTestResult(f"DeepSeek 连接成功，模型：{config.model}", stats)
 
-    def complete_json(self, messages: list[dict], *, advanced: bool = False) -> Completion:
-        config = self.settings_service.load(include_api_key=True)
+    def complete_json(
+        self, messages: list[dict], *, advanced: bool = False, config=None
+    ) -> Completion:
+        if config is None:
+            config = self.settings_service.load(include_api_key=True)
         self._require_key(config)
         model = config.advanced_model if advanced else config.model
         response, stats = self._request(
