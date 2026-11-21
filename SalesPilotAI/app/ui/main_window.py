@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import sys
+
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QApplication,
@@ -17,17 +20,22 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.capture.hotkey import GlobalHotkeyManager
 from app.config import APP_NAME, APP_NAME_ZH, APP_VERSION, get_data_dir
 from app.database.connection import Database
 from app.database.repositories.customer_repository import CustomerRepository
 from app.database.repositories.dashboard_repository import DashboardRepository
 from app.database.repositories.settings_repository import SettingsRepository
+from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
+from app.ui.chat_analysis_page import ChatAnalysisPage
 from app.ui.customer_page import CustomerPage
 from app.ui.dashboard import DashboardPage
 from app.ui.placeholder_page import PlaceholderPage
 from app.ui.settings_page import SettingsPage
 from app.ui.theme import DARK_THEME, LIGHT_THEME, VALID_THEMES, apply_theme
+
+logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
@@ -102,7 +110,7 @@ class MainWindow(QMainWindow):
         safety.setWordWrap(True)
         safety.setContentsMargins(22, 8, 16, 8)
         sidebar_layout.addWidget(safety)
-        version = QLabel(f"V{APP_VERSION} · 阶段 2")
+        version = QLabel(f"V{APP_VERSION} · 阶段 3")
         version.setObjectName("sidebarVersion")
         version.setContentsMargins(22, 0, 12, 0)
         sidebar_layout.addWidget(version)
@@ -141,17 +149,12 @@ class MainWindow(QMainWindow):
             lambda: self.navigation.setCurrentRow(1)
         )
 
-        self.pages.addWidget(
-            PlaceholderPage(
-                "AI 聊天分析",
-                "将在阶段 3 和阶段 4 实现",
-                "通过用户主动触发的 UI Automation、OCR 或手动粘贴获取可见聊天内容，确认后调用 DeepSeek。"
-                "分析前会明确提示上传范围并提供脱敏选项。",
-            )
+        customer_service = CustomerService(CustomerRepository(self.database))
+        self.chat_analysis_page = ChatAnalysisPage(
+            ConversationService(self.database), customer_service, self.settings
         )
-        self.customer_page = CustomerPage(
-            CustomerService(CustomerRepository(self.database))
-        )
+        self.pages.addWidget(self.chat_analysis_page)
+        self.customer_page = CustomerPage(customer_service)
         self.customer_page.customers_changed.connect(self.dashboard.refresh)
         self.customer_page.status_message.connect(
             lambda message: self.statusBar().showMessage(message, 5000)
@@ -172,6 +175,23 @@ class MainWindow(QMainWindow):
         self.settings_page = SettingsPage(self.current_theme, get_data_dir())
         self.settings_page.theme_requested.connect(self.set_theme)
         self.pages.addWidget(self.settings_page)
+
+        self.chat_analysis_page.customers_changed.connect(self.dashboard.refresh)
+        self.chat_analysis_page.customers_changed.connect(self.customer_page.refresh)
+        self.chat_analysis_page.status_message.connect(
+            lambda message: self.statusBar().showMessage(message, 6000)
+        )
+        self.chat_analysis_page.result_ready.connect(
+            lambda: self.navigation.setCurrentRow(1)
+        )
+        self.hotkey_manager = GlobalHotkeyManager(self)
+        self.hotkey_manager.triggered.connect(
+            lambda _sequence: self.chat_analysis_page.capture_current_chat()
+        )
+        self.hotkey_manager.error.connect(self._show_hotkey_error)
+        self.chat_analysis_page.hotkey_changed.connect(self.set_capture_hotkey)
+        if sys.platform == "win32":
+            self.set_capture_hotkey(self.settings.get("capture_hotkey", "Ctrl+Shift+A"))
         self.statusBar().showMessage("本地数据库已就绪", 3000)
 
     def navigate(self, index: int) -> None:
@@ -181,8 +201,23 @@ class MainWindow(QMainWindow):
         self.topbar_title.setText(self.NAVIGATION[index])
         if index == 0:
             self.dashboard.refresh()
+        elif index == 1:
+            self.chat_analysis_page.refresh_customers()
         elif index == 2:
             self.customer_page.refresh()
+
+    def set_capture_hotkey(self, sequence: str) -> None:
+        if sys.platform != "win32":
+            return
+        try:
+            self.hotkey_manager.start(sequence)
+        except Exception as exc:
+            self._show_hotkey_error(str(exc))
+
+    def _show_hotkey_error(self, message: str) -> None:
+        logger.error("全局快捷键：%s", message)
+        self.statusBar().showMessage(message, 8000)
+        self.chat_analysis_page.status_label.setText(message)
 
     def set_theme(self, theme: str) -> None:
         if theme not in VALID_THEMES:
@@ -204,3 +239,8 @@ class MainWindow(QMainWindow):
         self.theme_button.setToolTip("切换界面明暗主题")
         if hasattr(self, "settings_page"):
             self.settings_page.set_theme(self.current_theme)
+
+    def closeEvent(self, event) -> None:
+        if hasattr(self, "hotkey_manager"):
+            self.hotkey_manager.stop()
+        super().closeEvent(event)

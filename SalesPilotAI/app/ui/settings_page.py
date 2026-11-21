@@ -1,4 +1,4 @@
-"""阶段 1 可用的系统设置页面。"""
+"""系统设置与本地数据说明。"""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ class SettingsPage(QWidget):
         data_path.setObjectName("dataPath")
         form.addRow("本地数据目录", data_path)
 
-        version = QLabel(f"SalesPilot AI V{APP_VERSION} · 阶段 2")
+        version = QLabel(f"SalesPilot AI V{APP_VERSION} · 阶段 3")
         form.addRow("当前版本", version)
         layout.addWidget(card)
 
