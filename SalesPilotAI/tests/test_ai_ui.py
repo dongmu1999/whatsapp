@@ -116,7 +116,7 @@ def test_main_window_integrates_phase_four_pages(
         assert window.pages.widget(6) is window.ai_settings_page
         assert window.chat_analysis_page.analysis_service is not None
         version = window.findChild(QLabel, "sidebarVersion")
-        assert "阶段 6" in version.text()
+        assert "阶段 7" in version.text()
     finally:
         window.close()
 
@@ -168,8 +168,9 @@ def test_ai_settings_clear_key_and_failed_connection_status(application, databas
 
 
 class FakeAdvisor:
-    def __init__(self, outcome=None):
+    def __init__(self, outcome=None, analysis_data=None):
         self.outcome = outcome
+        self.analysis_data = analysis_data or payload()
         self.calls = []
         self.thread_ids = []
 
@@ -181,8 +182,8 @@ class FakeAdvisor:
         return AnalysisRunResult(
             customer_id=customer_id,
             conversation_id=conversation_id,
-            analysis=SalesAnalysis.model_validate(payload()),
-            raw_response=json.dumps(payload()),
+            analysis=SalesAnalysis.model_validate(self.analysis_data),
+            raw_response=json.dumps(self.analysis_data),
             api_calls=[stats()],
         )
 
@@ -321,6 +322,41 @@ def test_analysis_saves_memory_suggestions_as_pending(application, database, mon
         "ai_suggested",
         "pending",
     )
+    page.close()
+
+
+def test_analysis_followup_suggestion_requires_manual_task_creation(
+    application, database, monkeypatch
+):
+    data = payload()
+    data.update(
+        followup_required=True,
+        followup_suggestion="三天后礼貌确认客户是否收到报价",
+        followup_due_days=3,
+    )
+    page, customer = _make_analysis_page(database, FakeAdvisor(analysis_data=data))
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *args, **kwargs: QMessageBox.StandardButton.Yes
+    )
+    completed = QSignalSpy(page.analysis_completed)
+    captured = []
+    page.followup_suggested.connect(
+        lambda customer_id, suggestion: captured.append((customer_id, suggestion))
+    )
+
+    assert page.start_analysis()
+    _wait_for_signal(application, completed)
+    application.processEvents()
+    assert database.connection.execute("SELECT COUNT(*) FROM followups").fetchone()[0] == 0
+
+    assert page.analysis_result.followup_button.isVisibleTo(page.analysis_result)
+    page.analysis_result.followup_button.click()
+    application.processEvents()
+
+    assert captured[0][0] == customer.id
+    assert captured[0][1]["due_days"] == 3
+    assert captured[0][1]["content"] == "三天后礼貌确认客户是否收到报价"
+    assert database.connection.execute("SELECT COUNT(*) FROM followups").fetchone()[0] == 0
     page.close()
 
 

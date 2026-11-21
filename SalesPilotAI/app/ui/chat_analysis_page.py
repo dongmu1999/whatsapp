@@ -63,6 +63,7 @@ class ChatAnalysisPage(QWidget):
     result_ready = Signal()
     analysis_completed = Signal()
     analysis_failed = Signal(str)
+    followup_suggested = Signal(int, object)
 
     def __init__(
         self,
@@ -90,6 +91,7 @@ class ChatAnalysisPage(QWidget):
         self.memory_service = memory_service
         self.knowledge_service = knowledge_service
         self.current_source = "manual"
+        self._last_analysis_context = None
         self.may_be_incomplete = True
         self.current_conversation_id = None
         self._saved_capture_signature = None
@@ -284,6 +286,7 @@ class ChatAnalysisPage(QWidget):
 
         self.analysis_result = AnalysisResultWidget()
         self.analysis_result.status_message.connect(self._set_status)
+        self.analysis_result.followup_requested.connect(self._emit_followup_suggestion)
         layout.addWidget(self.analysis_result)
 
     def _load_settings(self) -> None:
@@ -599,6 +602,7 @@ class ChatAnalysisPage(QWidget):
         company_name = customer.company_name or "" if customer else ""
         conversation_id = self.current_conversation_id
         self._pending_analysis = (customer_id, conversation_id)
+        self._last_analysis_context = None
         self.analyze_button.setEnabled(False)
         self._set_status(f"正在使用 {model} 分析 {len(messages)} 条消息，请稍候…")
         worker = FunctionWorker(
@@ -659,6 +663,7 @@ class ChatAnalysisPage(QWidget):
                 logger.exception("保存客户记忆建议失败")
                 suggestion_failed = True
         self.analysis_result.set_analysis(result.analysis)
+        self._last_analysis_context = (result.customer_id, result.analysis)
         self._show_analysis_usage(result.api_calls)
         if suggestion_failed:
             note = " 分析已保存，但客户记忆建议写入失败。"
@@ -674,6 +679,7 @@ class ChatAnalysisPage(QWidget):
 
     def _analysis_error(self, error: Exception) -> None:
         customer_id, conversation_id = self._pending_analysis
+        self._last_analysis_context = None
         api_calls = list(getattr(error, "api_calls", []) or [])
         model = api_calls[-1].model if api_calls else None
         detail = (
@@ -698,6 +704,23 @@ class ChatAnalysisPage(QWidget):
             self._show_analysis_usage(api_calls)
         self._set_status(f"AI 分析失败：{detail}。现有预览已保留。")
         self.analysis_failed.emit(detail)
+
+    def _emit_followup_suggestion(self) -> None:
+        if self._last_analysis_context is None:
+            return
+        customer_id, analysis = self._last_analysis_context
+        if not analysis.followup_required:
+            return
+        self.followup_suggested.emit(
+            customer_id,
+            {
+                "due_days": analysis.followup_due_days
+                if analysis.followup_due_days is not None
+                else 3,
+                "reason": "AI 建议跟进",
+                "content": analysis.followup_suggestion or "跟进客户沟通进展",
+            },
+        )
 
     def _record_api_calls(self, api_calls) -> None:
         for stats in api_calls:

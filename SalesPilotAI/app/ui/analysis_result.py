@@ -71,6 +71,7 @@ class ReplySuggestionCard(QFrame):
 
 class AnalysisResultWidget(QWidget):
     status_message = Signal(str)
+    followup_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -123,6 +124,14 @@ class AnalysisResultWidget(QWidget):
         summary_layout.addLayout(self.form)
         layout.addWidget(summary)
 
+        self.followup_button = QPushButton("根据建议创建跟进任务…")
+        self.followup_button.setToolTip(
+            "只把 AI 建议填入跟进表单，仍需你核对客户、时间和内容后手动创建；不会发送 WhatsApp 消息。"
+        )
+        self.followup_button.clicked.connect(self.followup_requested)
+        self.followup_button.setVisible(False)
+        layout.addWidget(self.followup_button, 0, Qt.AlignLeft)
+
         replies_heading = QLabel("三种回复策略（仅复制，不会自动发送）")
         replies_heading.setObjectName("sectionHeading")
         layout.addWidget(replies_heading)
@@ -135,6 +144,14 @@ class AnalysisResultWidget(QWidget):
 
     def set_analysis(self, analysis: SalesAnalysis) -> None:
         self.analysis = analysis
+        self.followup_button.setVisible(analysis.followup_required)
+        if analysis.followup_required:
+            if analysis.followup_due_days is None:
+                self.followup_button.setText("根据建议创建跟进任务…")
+            else:
+                self.followup_button.setText(
+                    f"建议 {analysis.followup_due_days} 天后跟进，手动创建任务…"
+                )
         self.score_label.setText(f"{analysis.purchase_intent_score} / 100")
         self.confidence_label.setText(f"置信度：{analysis.confidence:.0%}")
         self.intent_label.setText(f"客户意图：{analysis.customer_intent}")

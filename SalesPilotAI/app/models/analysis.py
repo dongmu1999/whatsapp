@@ -62,6 +62,7 @@ class SalesAnalysis(BaseModel):
     replies: list[ReplySuggestion] = Field(min_length=3, max_length=3)
     followup_required: bool
     followup_suggestion: str
+    followup_due_days: int | None = Field(default=None, ge=0, le=30)
     unknown_information: list[str]
     memory_suggestions: list[MemorySuggestion] = Field(default_factory=list)
     knowledge_references: list[KnowledgeReference] = Field(default_factory=list)

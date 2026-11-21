@@ -97,6 +97,6 @@ def test_main_window_uses_stage_five_history_page(application, database, tmp_pat
         assert isinstance(window.customer_history_page, CustomerHistoryPage)
         assert window.pages.widget(3) is window.customer_history_page
         version = window.findChild(QLabel, "sidebarVersion")
-        assert "阶段 6" in version.text()
+        assert "阶段 7" in version.text()
     finally:
         window.close()

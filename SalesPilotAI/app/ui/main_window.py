@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import sys
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -29,6 +29,7 @@ from app.database.repositories.analysis_repository import (
 )
 from app.database.repositories.customer_repository import CustomerRepository
 from app.database.repositories.dashboard_repository import DashboardRepository
+from app.database.repositories.followup_repository import FollowupRepository
 from app.database.repositories.history_repository import HistoryRepository
 from app.database.repositories.knowledge_repository import KnowledgeRepository
 from app.database.repositories.memory_repository import MemoryRepository
@@ -37,6 +38,7 @@ from app.services.ai_settings_service import AISettingsService
 from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
 from app.services.deepseek_service import DeepSeekClient
+from app.services.followup_service import FollowupService
 from app.services.knowledge_service import KnowledgeService
 from app.services.memory_service import MemoryService
 from app.services.sales_advisor_service import SalesAdvisorService
@@ -45,8 +47,8 @@ from app.ui.chat_analysis_page import ChatAnalysisPage
 from app.ui.customer_history_page import CustomerHistoryPage
 from app.ui.customer_page import CustomerPage
 from app.ui.dashboard import DashboardPage
+from app.ui.followup_page import FollowupPage
 from app.ui.knowledge_page import KnowledgePage
-from app.ui.placeholder_page import PlaceholderPage
 from app.ui.settings_page import SettingsPage
 from app.ui.theme import DARK_THEME, LIGHT_THEME, VALID_THEMES, apply_theme
 
@@ -125,7 +127,7 @@ class MainWindow(QMainWindow):
         safety.setWordWrap(True)
         safety.setContentsMargins(22, 8, 16, 8)
         sidebar_layout.addWidget(safety)
-        version = QLabel(f"V{APP_VERSION} · 阶段 6")
+        version = QLabel(f"V{APP_VERSION} · 阶段 7")
         version.setObjectName("sidebarVersion")
         version.setContentsMargins(22, 0, 12, 0)
         sidebar_layout.addWidget(version)
@@ -165,6 +167,8 @@ class MainWindow(QMainWindow):
         )
 
         customer_service = CustomerService(CustomerRepository(self.database))
+        self.customer_service = customer_service
+        self.followup_service = FollowupService(FollowupRepository(self.database))
         ai_settings_service = AISettingsService(self.settings)
         deepseek_client = DeepSeekClient(ai_settings_service)
         usage_repository = APIUsageRepository(self.database)
@@ -200,9 +204,13 @@ class MainWindow(QMainWindow):
             lambda message: self.statusBar().showMessage(message, 6000)
         )
         self.pages.addWidget(self.knowledge_page)
-        self.pages.addWidget(
-            PlaceholderPage("跟进任务", "将在阶段 7 实现", "创建本地跟进计划、记录结果并接收软件内提醒。")
+        self.followup_page = FollowupPage(self.followup_service, customer_service)
+        self.followup_page.status_message.connect(
+            lambda message: self.statusBar().showMessage(message, 6000)
         )
+        self.followup_page.followups_changed.connect(self.dashboard.refresh)
+        self.followup_page.followups_changed.connect(self.check_followup_reminders)
+        self.pages.addWidget(self.followup_page)
         self.ai_settings_page = AISettingsPage(
             ai_settings_service, deepseek_client, usage_repository
         )
@@ -223,6 +231,9 @@ class MainWindow(QMainWindow):
         self.chat_analysis_page.analysis_completed.connect(
             self.customer_history_page.refresh_customers
         )
+        self.chat_analysis_page.followup_suggested.connect(
+            self._open_followup_suggestion
+        )
         self.customer_page.customers_changed.connect(
             self.customer_history_page.refresh_customers
         )
@@ -234,7 +245,42 @@ class MainWindow(QMainWindow):
         self.chat_analysis_page.hotkey_changed.connect(self.set_capture_hotkey)
         if sys.platform == "win32":
             self.set_capture_hotkey(self.settings.get("capture_hotkey", "Ctrl+Shift+A"))
+        self.reminder_text = ""
+        self.reminder_timer = QTimer(self)
+        self.reminder_timer.setInterval(60_000)
+        self.reminder_timer.timeout.connect(self.check_followup_reminders)
+        self.reminder_timer.start()
         self.statusBar().showMessage("本地数据库已就绪", 3000)
+        self.check_followup_reminders()
+
+    def check_followup_reminders(self) -> None:
+        """仅在软件内提示逾期和今日待办，不弹出系统通知。"""
+        overdue = self.followup_service.overdue()
+        overdue_ids = {task.id for task in overdue}
+        today = [
+            task for task in self.followup_service.due_today() if task.id not in overdue_ids
+        ]
+        if overdue or today:
+            self.reminder_text = (
+                f"跟进提醒：{len(overdue)} 项已逾期，{len(today)} 项今日到期"
+            )
+            self.statusBar().showMessage(self.reminder_text, 12_000)
+        else:
+            self.reminder_text = ""
+
+    def _open_followup_suggestion(self, customer_id: int, suggestion: dict) -> None:
+        self.followup_page.refresh_customers()
+        self.followup_page.prefill(
+            customer_id,
+            int(suggestion.get("due_days", 3)),
+            str(suggestion.get("content", "")),
+            str(suggestion.get("reason", "AI 建议跟进")),
+        )
+        self.navigation.setCurrentRow(5)
+        self.statusBar().showMessage(
+            "已填入 AI 跟进建议，请核对客户、时间和内容后手动创建；不会自动发送消息。",
+            10_000,
+        )
 
     def navigate(self, index: int) -> None:
         if not 0 <= index < self.pages.count():
@@ -251,6 +297,9 @@ class MainWindow(QMainWindow):
             self.customer_history_page.refresh_customers()
         elif index == 4:
             self.knowledge_page.refresh()
+        elif index == 5:
+            self.followup_page.refresh_customers()
+            self.followup_page.refresh()
 
     def set_capture_hotkey(self, sequence: str) -> None:
         if sys.platform != "win32":
