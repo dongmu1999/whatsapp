@@ -23,11 +23,19 @@ from PySide6.QtWidgets import (
 from app.capture.hotkey import GlobalHotkeyManager
 from app.config import APP_NAME, APP_NAME_ZH, APP_VERSION, get_data_dir
 from app.database.connection import Database
+from app.database.repositories.analysis_repository import (
+    AnalysisRepository,
+    APIUsageRepository,
+)
 from app.database.repositories.customer_repository import CustomerRepository
 from app.database.repositories.dashboard_repository import DashboardRepository
 from app.database.repositories.settings_repository import SettingsRepository
+from app.services.ai_settings_service import AISettingsService
 from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
+from app.services.deepseek_service import DeepSeekClient
+from app.services.sales_advisor_service import SalesAdvisorService
+from app.ui.ai_settings_page import AISettingsPage
 from app.ui.chat_analysis_page import ChatAnalysisPage
 from app.ui.customer_page import CustomerPage
 from app.ui.dashboard import DashboardPage
@@ -110,7 +118,7 @@ class MainWindow(QMainWindow):
         safety.setWordWrap(True)
         safety.setContentsMargins(22, 8, 16, 8)
         sidebar_layout.addWidget(safety)
-        version = QLabel(f"V{APP_VERSION} · 阶段 3")
+        version = QLabel(f"V{APP_VERSION} · 阶段 4")
         version.setObjectName("sidebarVersion")
         version.setContentsMargins(22, 0, 12, 0)
         sidebar_layout.addWidget(version)
@@ -150,8 +158,17 @@ class MainWindow(QMainWindow):
         )
 
         customer_service = CustomerService(CustomerRepository(self.database))
+        ai_settings_service = AISettingsService(self.settings)
+        deepseek_client = DeepSeekClient(ai_settings_service)
+        usage_repository = APIUsageRepository(self.database)
         self.chat_analysis_page = ChatAnalysisPage(
-            ConversationService(self.database), customer_service, self.settings
+            ConversationService(self.database),
+            customer_service,
+            self.settings,
+            analysis_service=SalesAdvisorService(deepseek_client),
+            analysis_repository=AnalysisRepository(self.database),
+            usage_repository=usage_repository,
+            ai_settings_service=ai_settings_service,
         )
         self.pages.addWidget(self.chat_analysis_page)
         self.customer_page = CustomerPage(customer_service)
@@ -169,9 +186,10 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(
             PlaceholderPage("跟进任务", "将在阶段 7 实现", "创建本地跟进计划、记录结果并接收软件内提醒。")
         )
-        self.pages.addWidget(
-            PlaceholderPage("AI 模型设置", "将在阶段 4 实现", "配置 DeepSeek Base URL、模型与加密保存的 API Key，并测试连接。")
+        self.ai_settings_page = AISettingsPage(
+            ai_settings_service, deepseek_client, usage_repository
         )
+        self.pages.addWidget(self.ai_settings_page)
         self.settings_page = SettingsPage(self.current_theme, get_data_dir())
         self.settings_page.theme_requested.connect(self.set_theme)
         self.pages.addWidget(self.settings_page)
@@ -184,6 +202,7 @@ class MainWindow(QMainWindow):
         self.chat_analysis_page.result_ready.connect(
             lambda: self.navigation.setCurrentRow(1)
         )
+        self.chat_analysis_page.analysis_completed.connect(self.dashboard.refresh)
         self.hotkey_manager = GlobalHotkeyManager(self)
         self.hotkey_manager.triggered.connect(
             lambda _sequence: self.chat_analysis_page.capture_current_chat()

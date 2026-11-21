@@ -55,7 +55,7 @@ class SettingsPage(QWidget):
         data_path.setObjectName("dataPath")
         form.addRow("本地数据目录", data_path)
 
-        version = QLabel(f"SalesPilot AI V{APP_VERSION} · 阶段 3")
+        version = QLabel(f"SalesPilot AI V{APP_VERSION} · 阶段 4")
         form.addRow("当前版本", version)
         layout.addWidget(card)
 
@@ -67,8 +67,8 @@ class SettingsPage(QWidget):
         privacy_title.setObjectName("sectionHeading")
         privacy_layout.addWidget(privacy_title)
         privacy_text = QLabel(
-            "客户数据默认仅保存在本机 SQLite 数据库。后续调用 DeepSeek 分析前，"
-            "软件会显示发送范围并提供脱敏选项；不会自动发送 WhatsApp 消息，也不会收集遥测数据。"
+            "客户数据默认仅保存在本机 SQLite 数据库。调用 DeepSeek 分析前，"
+            "软件会显示发送范围并提供脱敏选项；API Key 由系统安全凭据库保存；不会自动发送 WhatsApp 消息，也不会收集遥测数据。"
         )
         privacy_text.setObjectName("mutedText")
         privacy_text.setWordWrap(True)

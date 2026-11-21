@@ -1,4 +1,4 @@
-"""阶段 3：主动捕获、OCR/手动备用、消息预览编辑和本地保存。"""
+"""阶段 3—4：聊天捕获、预览保存、确认后的 DeepSeek 分析与回复复制。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QThreadPool, Qt, Signal
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -37,12 +37,16 @@ from app.capture.errors import CaptureError
 from app.capture.hotkey import parse_hotkey
 from app.capture.models import CaptureResult
 from app.database.repositories.settings_repository import SettingsRepository
+from app.models.analysis import AnalysisParseError
 from app.models.message import CAPTURE_SOURCES, CapturedMessage, MessageParser
 from app.services.chat_capture_service import ChatCaptureService
 from app.services.conversation_service import ConversationService, ConversationValidationError
 from app.services.customer_service import CustomerService
+from app.services.deepseek_service import DeepSeekAPIError
+from app.ui.analysis_result import AnalysisResultWidget
 from app.ui.customer_detail import CustomerEditDialog
 from app.ui.region_selector import RegionSelectorDialog
+from app.ui.workers import FunctionWorker
 
 logger = logging.getLogger(__name__)
 _SENDER_LABELS = (("未知", "unknown"), ("客户", "customer"), ("销售", "sales"))
@@ -57,6 +61,8 @@ class ChatAnalysisPage(QWidget):
     customers_changed = Signal()
     status_message = Signal(str)
     result_ready = Signal()
+    analysis_completed = Signal()
+    analysis_failed = Signal(str)
 
     def __init__(
         self,
@@ -64,6 +70,10 @@ class ChatAnalysisPage(QWidget):
         customer_service: CustomerService,
         settings: SettingsRepository,
         capture_service: ChatCaptureService | None = None,
+        analysis_service=None,
+        analysis_repository=None,
+        usage_repository=None,
+        ai_settings_service=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -71,8 +81,16 @@ class ChatAnalysisPage(QWidget):
         self.customer_service = customer_service
         self.settings = settings
         self.capture_service = capture_service or ChatCaptureService()
+        self.analysis_service = analysis_service
+        self.analysis_repository = analysis_repository
+        self.usage_repository = usage_repository
+        self.ai_settings_service = ai_settings_service
         self.current_source = "manual"
         self.may_be_incomplete = True
+        self.current_conversation_id = None
+        self._saved_capture_signature = None
+        self._active_worker = None
+        self._pending_analysis = None
         self.setObjectName("chatAnalysisPage")
         self._build_ui()
         self._load_settings()
@@ -91,11 +109,11 @@ class ChatAnalysisPage(QWidget):
         layout.setContentsMargins(28, 24, 28, 28)
         layout.setSpacing(14)
 
-        heading = QLabel("AI 聊天分析 · 聊天捕获")
+        heading = QLabel("AI 聊天分析 · DeepSeek 外贸销售顾问")
         heading.setObjectName("pageHeading")
         layout.addWidget(heading)
         subtitle = QLabel(
-            "主动获取当前可见消息，核对后再保存到本地。AI 分析将在阶段 4 提供。"
+            "主动获取并核对当前可见消息；只有明确确认后才会保存并上传本次分析范围。"
         )
         subtitle.setObjectName("pageSubtitle")
         layout.addWidget(subtitle)
@@ -235,6 +253,34 @@ class ChatAnalysisPage(QWidget):
         self.status_label.setObjectName("mutedText")
         self.status_label.setWordWrap(True)
         layout.addWidget(self.status_label)
+
+        analysis_card = QFrame()
+        analysis_card.setObjectName("card")
+        analysis_layout = QGridLayout(analysis_card)
+        analysis_layout.setContentsMargins(18, 14, 18, 14)
+        self.redact_check = QCheckBox("上传前脱敏手机号、邮箱和公司名（推荐）")
+        self.redact_check.setChecked(True)
+        analysis_layout.addWidget(self.redact_check, 0, 0, 1, 2)
+        self.advanced_check = QCheckBox("使用高级模型")
+        analysis_layout.addWidget(self.advanced_check, 0, 2)
+        self.analyze_button = QPushButton("确认范围并进行 AI 分析")
+        self.analyze_button.setObjectName("primaryButton")
+        self.analyze_button.clicked.connect(self.start_analysis)
+        analysis_layout.addWidget(self.analyze_button, 1, 0, 1, 3)
+        upload_notice = QLabel(
+            "点击后将显示消息数、接口地址、模型和脱敏状态；确认才上传。仅分析本次预览，不自动跟进或发送。"
+        )
+        upload_notice.setObjectName("mutedText")
+        upload_notice.setWordWrap(True)
+        analysis_layout.addWidget(upload_notice, 2, 0, 1, 3)
+        self.analysis_usage_label = QLabel("本次分析用量：尚未执行")
+        self.analysis_usage_label.setObjectName("mutedText")
+        analysis_layout.addWidget(self.analysis_usage_label, 3, 0, 1, 3)
+        layout.addWidget(analysis_card)
+
+        self.analysis_result = AnalysisResultWidget()
+        self.analysis_result.status_message.connect(self._set_status)
+        layout.addWidget(self.analysis_result)
 
     def _load_settings(self) -> None:
         sequence = self.settings.get("capture_hotkey", "Ctrl+Shift+A")
@@ -382,6 +428,8 @@ class ChatAnalysisPage(QWidget):
     def load_result(self, result: CaptureResult) -> None:
         self.current_source = result.source
         self.may_be_incomplete = result.may_be_incomplete
+        self.current_conversation_id = None
+        self._saved_capture_signature = None
         self.title_edit.setText(result.title)
         self._populate_messages(result.messages)
         self.incomplete_label.setText(
@@ -465,7 +513,7 @@ class ChatAnalysisPage(QWidget):
             messages = self.current_messages()
             if not messages:
                 raise ConversationValidationError("至少一条消息才能保存")
-            self.conversation_service.save_capture(
+            self.current_conversation_id = self.conversation_service.save_capture(
                 customer_id,
                 self.title_edit.text(),
                 messages,
@@ -479,9 +527,160 @@ class ChatAnalysisPage(QWidget):
             logger.exception("保存捕获聊天失败")
             self._set_status("本地数据库保存失败，请稍后重试。")
             return False
+        self._saved_capture_signature = self._capture_signature(customer_id, messages)
         message = f"已保存 {len(messages)} 条消息到本地客户记录；未调用 AI，未发送 WhatsApp 消息。"
         self._set_status(message)
         return True
+
+    def start_analysis(self) -> bool:
+        if self._active_worker is not None:
+            self._set_status("AI 分析正在进行，请等待本次请求完成。")
+            return False
+        dependencies = (
+            self.analysis_service,
+            self.analysis_repository,
+            self.usage_repository,
+            self.ai_settings_service,
+        )
+        if any(dependency is None for dependency in dependencies):
+            self._set_status("AI 分析服务尚未配置，请从主窗口进入或检查应用初始化。")
+            return False
+        customer_id = self.customer_combo.currentData()
+        if customer_id is None:
+            self._set_status("请先选择客户，再进行 AI 分析。")
+            return False
+        try:
+            messages = self.current_messages()
+            if not messages:
+                raise ConversationValidationError("至少需要一条预览消息才能进行 AI 分析")
+        except (ConversationValidationError, ValueError) as exc:
+            self._set_status(str(exc))
+            return False
+
+        config = self.ai_settings_service.load()
+        advanced = self.advanced_check.isChecked()
+        redact = self.redact_check.isChecked()
+        model = config.advanced_model if advanced else config.model
+        confirmation = (
+            f"即将上传本次预览中的 {len(messages)} 条消息（当前可见范围）进行 AI 分析。\n\n"
+            f"接口地址：{config.base_url}\n"
+            f"使用模型：{model}\n"
+            f"隐私脱敏：{'已启用（手机号、邮箱和公司名）' if redact else '未启用，原始消息将上传'}\n\n"
+            "消息可能不包含完整历史。确认上传后，软件会先在本地保存本次会话；不会自动发送 WhatsApp 消息。"
+        )
+        answer = QMessageBox.question(
+            self,
+            "确认上传聊天分析范围",
+            confirmation,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            self._set_status("已取消 AI 分析；未上传消息，也未新增本地会话。")
+            return False
+        if not self._ensure_conversation_saved(customer_id, messages):
+            return False
+
+        customer = self.customer_service.get(customer_id)
+        company_name = customer.company_name or "" if customer else ""
+        conversation_id = self.current_conversation_id
+        self._pending_analysis = (customer_id, conversation_id)
+        self.analyze_button.setEnabled(False)
+        self._set_status(f"正在使用 {model} 分析 {len(messages)} 条消息，请稍候…")
+        worker = FunctionWorker(
+            lambda: self.analysis_service.analyze(
+                customer_id,
+                conversation_id,
+                messages,
+                company_name=company_name,
+                redact=redact,
+                advanced=advanced,
+            )
+        )
+        self._active_worker = worker
+        worker.signals.result.connect(self._analysis_succeeded)
+        worker.signals.error.connect(self._analysis_error)
+        worker.signals.finished.connect(self._analysis_done)
+        QThreadPool.globalInstance().start(worker)
+        return True
+
+    def _capture_signature(self, customer_id: int, messages: list[CapturedMessage]):
+        return (
+            customer_id,
+            self.title_edit.text(),
+            self.current_source,
+            self.may_be_incomplete,
+            tuple(messages),
+        )
+
+    def _ensure_conversation_saved(
+        self, customer_id: int, messages: list[CapturedMessage]
+    ) -> bool:
+        signature = self._capture_signature(customer_id, messages)
+        if (
+            self.current_conversation_id is not None
+            and signature == self._saved_capture_signature
+        ):
+            return True
+        return self.save_capture()
+
+    def _analysis_succeeded(self, result) -> None:
+        try:
+            self.analysis_repository.save_result(result)
+            self._record_api_calls(result.api_calls)
+        except sqlite3.Error:
+            logger.exception("保存 AI 分析结果失败")
+            detail = "AI 已返回结果，但本地数据库保存失败，请稍后重试。"
+            self._set_status(detail)
+            self.analysis_failed.emit(detail)
+            return
+        self.analysis_result.set_analysis(result.analysis)
+        self._show_analysis_usage(result.api_calls)
+        self._set_status("AI 分析与三种回复已保存到本地。英文回复可编辑并复制，不会自动发送。")
+        self.analysis_completed.emit()
+
+    def _analysis_error(self, error: Exception) -> None:
+        customer_id, conversation_id = self._pending_analysis
+        api_calls = list(getattr(error, "api_calls", []) or [])
+        model = api_calls[-1].model if api_calls else None
+        detail = (
+            str(error)
+            if isinstance(error, (DeepSeekAPIError, AnalysisParseError, ValueError))
+            else "AI 分析请求失败，请检查网络、模型配置后重试。"
+        )
+        try:
+            self.analysis_repository.save_failure(
+                customer_id=customer_id,
+                conversation_id=conversation_id,
+                model=model,
+                raw_response=getattr(error, "raw_response", "") or "",
+                error_message=detail,
+                api_calls=api_calls,
+            )
+            self._record_api_calls(api_calls)
+        except sqlite3.Error:
+            logger.exception("保存 AI 分析失败记录时发生数据库错误")
+            detail += "；失败记录也未能写入本地数据库。"
+        if api_calls:
+            self._show_analysis_usage(api_calls)
+        self._set_status(f"AI 分析失败：{detail}。现有预览已保留。")
+        self.analysis_failed.emit(detail)
+
+    def _record_api_calls(self, api_calls) -> None:
+        for stats in api_calls:
+            self.usage_repository.record(stats)
+
+    def _show_analysis_usage(self, api_calls) -> None:
+        self.analysis_usage_label.setText(
+            f"本次分析：{len(api_calls)} 次请求 · "
+            f"合计 {sum(call.total_tokens for call in api_calls)} Token · "
+            f"{sum(call.duration_ms for call in api_calls)} ms"
+        )
+
+    def _analysis_done(self) -> None:
+        self._active_worker = None
+        self._pending_analysis = None
+        self.analyze_button.setEnabled(True)
 
     def _run_capture(self, operation) -> None:
         self.capture_button.setEnabled(False)
