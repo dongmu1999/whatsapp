@@ -116,7 +116,7 @@ def test_main_window_integrates_phase_four_pages(
         assert window.pages.widget(6) is window.ai_settings_page
         assert window.chat_analysis_page.analysis_service is not None
         version = window.findChild(QLabel, "sidebarVersion")
-        assert "阶段 5" in version.text()
+        assert "阶段 6" in version.text()
     finally:
         window.close()
 
@@ -187,7 +187,7 @@ class FakeAdvisor:
         )
 
 
-def _make_analysis_page(database, advisor):
+def _make_analysis_page(database, advisor, knowledge_service=None):
     customer_service = CustomerService(CustomerRepository(database))
     settings_service = AISettingsService(
         SettingsRepository(database), FakeCredentials()
@@ -203,6 +203,7 @@ def _make_analysis_page(database, advisor):
         memory_service=MemoryService(
             MemoryRepository(database), HistoryRepository(database)
         ),
+        knowledge_service=knowledge_service,
     )
     customer = customer_service.create({"name": "Alice", "company_name": "ACME GmbH"})
     page.refresh_customers()

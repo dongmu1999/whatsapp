@@ -30,12 +30,14 @@ from app.database.repositories.analysis_repository import (
 from app.database.repositories.customer_repository import CustomerRepository
 from app.database.repositories.dashboard_repository import DashboardRepository
 from app.database.repositories.history_repository import HistoryRepository
+from app.database.repositories.knowledge_repository import KnowledgeRepository
 from app.database.repositories.memory_repository import MemoryRepository
 from app.database.repositories.settings_repository import SettingsRepository
 from app.services.ai_settings_service import AISettingsService
 from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
 from app.services.deepseek_service import DeepSeekClient
+from app.services.knowledge_service import KnowledgeService
 from app.services.memory_service import MemoryService
 from app.services.sales_advisor_service import SalesAdvisorService
 from app.ui.ai_settings_page import AISettingsPage
@@ -43,6 +45,7 @@ from app.ui.chat_analysis_page import ChatAnalysisPage
 from app.ui.customer_history_page import CustomerHistoryPage
 from app.ui.customer_page import CustomerPage
 from app.ui.dashboard import DashboardPage
+from app.ui.knowledge_page import KnowledgePage
 from app.ui.placeholder_page import PlaceholderPage
 from app.ui.settings_page import SettingsPage
 from app.ui.theme import DARK_THEME, LIGHT_THEME, VALID_THEMES, apply_theme
@@ -122,7 +125,7 @@ class MainWindow(QMainWindow):
         safety.setWordWrap(True)
         safety.setContentsMargins(22, 8, 16, 8)
         sidebar_layout.addWidget(safety)
-        version = QLabel(f"V{APP_VERSION} · 阶段 5")
+        version = QLabel(f"V{APP_VERSION} · 阶段 6")
         version.setObjectName("sidebarVersion")
         version.setContentsMargins(22, 0, 12, 0)
         sidebar_layout.addWidget(version)
@@ -168,6 +171,7 @@ class MainWindow(QMainWindow):
         memory_service = MemoryService(
             MemoryRepository(self.database), HistoryRepository(self.database)
         )
+        knowledge_service = KnowledgeService(KnowledgeRepository(self.database))
         self.chat_analysis_page = ChatAnalysisPage(
             ConversationService(self.database),
             customer_service,
@@ -177,6 +181,7 @@ class MainWindow(QMainWindow):
             usage_repository=usage_repository,
             ai_settings_service=ai_settings_service,
             memory_service=memory_service,
+            knowledge_service=knowledge_service,
         )
         self.pages.addWidget(self.chat_analysis_page)
         self.customer_page = CustomerPage(customer_service)
@@ -190,9 +195,11 @@ class MainWindow(QMainWindow):
             lambda message: self.statusBar().showMessage(message, 5000)
         )
         self.pages.addWidget(self.customer_history_page)
-        self.pages.addWidget(
-            PlaceholderPage("产品知识库", "将在阶段 6 实现", "导入产品文档并通过 SQLite FTS5 检索相关资料。")
+        self.knowledge_page = KnowledgePage(knowledge_service)
+        self.knowledge_page.status_message.connect(
+            lambda message: self.statusBar().showMessage(message, 6000)
         )
+        self.pages.addWidget(self.knowledge_page)
         self.pages.addWidget(
             PlaceholderPage("跟进任务", "将在阶段 7 实现", "创建本地跟进计划、记录结果并接收软件内提醒。")
         )
@@ -242,6 +249,8 @@ class MainWindow(QMainWindow):
             self.customer_page.refresh()
         elif index == 3:
             self.customer_history_page.refresh_customers()
+        elif index == 4:
+            self.knowledge_page.refresh()
 
     def set_capture_hotkey(self, sequence: str) -> None:
         if sys.platform != "win32":

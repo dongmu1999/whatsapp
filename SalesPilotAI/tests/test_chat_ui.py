@@ -190,6 +190,6 @@ def test_main_window_integrates_real_chat_analysis_page(application, database, t
         assert window.pages.widget(1) is window.chat_analysis_page
         version = window.findChild(QLabel, "sidebarVersion")
         assert version is not None
-        assert "阶段 5" in version.text()
+        assert "阶段 6" in version.text()
     finally:
         window.close()

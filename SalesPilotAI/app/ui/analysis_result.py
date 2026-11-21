@@ -118,6 +118,8 @@ class AnalysisResultWidget(QWidget):
             value = _wrapped_label("—")
             self.value_labels[key] = value
             self.form.addRow(title, value)
+        self.knowledge_label = _wrapped_label("—")
+        self.form.addRow("知识库引用", self.knowledge_label)
         summary_layout.addLayout(self.form)
         layout.addWidget(summary)
 
@@ -149,6 +151,17 @@ class AnalysisResultWidget(QWidget):
             label.setText(text)
         for reply in analysis.replies:
             self.reply_cards[reply.type].set_reply(reply)
+        if analysis.knowledge_references:
+            self.knowledge_label.setText(
+                "\n".join(
+                    f"• {reference.source}：{reference.fact}"
+                    for reference in analysis.knowledge_references
+                )
+            )
+        else:
+            self.knowledge_label.setText(
+                "本次未引用知识库；客户说法与 AI 推测不得视为已确认资料。"
+            )
 
     def copy_reply(self, reply_type: str) -> None:
         card = self.reply_cards[reply_type]

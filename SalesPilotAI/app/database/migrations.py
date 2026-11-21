@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 
-from app.database.schema import INITIAL_SCHEMA
+from app.database.schema import INITIAL_SCHEMA, KNOWLEDGE_SEARCH_SCHEMA
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,10 @@ class Migration:
     sql: str
 
 
-MIGRATIONS = (Migration(1, "initial_schema", INITIAL_SCHEMA),)
+MIGRATIONS = (
+    Migration(1, "initial_schema", INITIAL_SCHEMA),
+    Migration(2, "knowledge_full_text_search", KNOWLEDGE_SEARCH_SCHEMA),
+)
 
 
 class MigrationManager:

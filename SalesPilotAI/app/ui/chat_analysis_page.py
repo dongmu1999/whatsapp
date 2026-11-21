@@ -75,6 +75,7 @@ class ChatAnalysisPage(QWidget):
         usage_repository=None,
         ai_settings_service=None,
         memory_service=None,
+        knowledge_service=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -87,6 +88,7 @@ class ChatAnalysisPage(QWidget):
         self.usage_repository = usage_repository
         self.ai_settings_service = ai_settings_service
         self.memory_service = memory_service
+        self.knowledge_service = knowledge_service
         self.current_source = "manual"
         self.may_be_incomplete = True
         self.current_conversation_id = None
@@ -563,11 +565,21 @@ class ChatAnalysisPage(QWidget):
         advanced = self.advanced_check.isChecked()
         redact = self.redact_check.isChecked()
         model = config.advanced_model if advanced else config.model
+        knowledge_snippets = []
+        if self.knowledge_service is not None:
+            try:
+                knowledge_snippets = self.knowledge_service.retrieve_for_messages(
+                    messages, limit=5
+                )
+            except Exception:
+                logger.exception("检索产品知识库失败，本次分析不携带知识库片段")
         confirmation = (
             f"即将上传本次预览中的 {len(messages)} 条消息（当前可见范围）进行 AI 分析。\n\n"
             f"接口地址：{config.base_url}\n"
             f"使用模型：{model}\n"
-            f"隐私脱敏：{'已启用（手机号、邮箱和公司名）' if redact else '未启用，原始消息将上传'}\n\n"
+            f"隐私脱敏：{'已启用（手机号、邮箱和公司名）' if redact else '未启用，原始消息将上传'}\n"
+            f"知识库相关片段：{len(knowledge_snippets)} 条"
+            "（仅检索与本次聊天相关的片段）\n\n"
             "消息可能不包含完整历史。确认上传后，软件会先在本地保存本次会话；不会自动发送 WhatsApp 消息。"
         )
         answer = QMessageBox.question(
@@ -597,6 +609,7 @@ class ChatAnalysisPage(QWidget):
                 company_name=company_name,
                 redact=redact,
                 advanced=advanced,
+                knowledge_snippets=knowledge_snippets,
             )
         )
         self._active_worker = worker

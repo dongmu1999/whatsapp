@@ -38,7 +38,7 @@ def _add_customer(database: Database, name: str, score: int = 0) -> int:
 def test_initialization_creates_schema_and_is_idempotent():
     database = Database(":memory:")
     try:
-        assert database.initialize() == [1]
+        assert database.initialize() == [1, 2]
         assert database.initialize() == []
 
         tables = {
@@ -48,7 +48,7 @@ def test_initialization_creates_schema_and_is_idempotent():
             )
         }
         assert REQUIRED_TABLES <= tables
-        assert database.connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert database.connection.execute("PRAGMA user_version").fetchone()[0] == 2
         assert database.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         migration = database.connection.execute(
             "SELECT version, name FROM database_migrations"

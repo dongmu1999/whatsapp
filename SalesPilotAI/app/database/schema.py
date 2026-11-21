@@ -1,5 +1,63 @@
 """数据库初始结构。所有时间戳均以 UTC ISO-8601 文本保存。"""
 
+KNOWLEDGE_SEARCH_SCHEMA = r"""
+CREATE INDEX IF NOT EXISTS idx_knowledge_category
+    ON knowledge_documents(category, imported_at DESC);
+
+DROP TRIGGER IF EXISTS knowledge_fts_insert;
+DROP TRIGGER IF EXISTS knowledge_fts_delete;
+DROP TRIGGER IF EXISTS knowledge_fts_update;
+DROP TABLE IF EXISTS knowledge_search;
+
+CREATE VIRTUAL TABLE knowledge_search USING fts5(
+    file_name,
+    title,
+    category,
+    content,
+    content='knowledge_documents',
+    content_rowid='id',
+    tokenize='trigram'
+);
+
+INSERT INTO knowledge_search(rowid, file_name, title, category, content)
+SELECT id, file_name, coalesce(title, ''), coalesce(category, ''), content
+FROM knowledge_documents;
+
+CREATE TRIGGER IF NOT EXISTS knowledge_documents_fts_insert
+AFTER INSERT ON knowledge_documents BEGIN
+    INSERT INTO knowledge_search(rowid, file_name, title, category, content)
+    VALUES (
+        new.id, new.file_name, coalesce(new.title, ''),
+        coalesce(new.category, ''), new.content
+    );
+END;
+
+CREATE TRIGGER IF NOT EXISTS knowledge_documents_fts_delete
+AFTER DELETE ON knowledge_documents BEGIN
+    INSERT INTO knowledge_search(
+        knowledge_search, rowid, file_name, title, category, content
+    ) VALUES (
+        'delete', old.id, old.file_name, coalesce(old.title, ''),
+        coalesce(old.category, ''), old.content
+    );
+END;
+
+CREATE TRIGGER IF NOT EXISTS knowledge_documents_fts_update
+AFTER UPDATE ON knowledge_documents BEGIN
+    INSERT INTO knowledge_search(
+        knowledge_search, rowid, file_name, title, category, content
+    ) VALUES (
+        'delete', old.id, old.file_name, coalesce(old.title, ''),
+        coalesce(old.category, ''), old.content
+    );
+    INSERT INTO knowledge_search(rowid, file_name, title, category, content)
+    VALUES (
+        new.id, new.file_name, coalesce(new.title, ''),
+        coalesce(new.category, ''), new.content
+    );
+END;
+"""
+
 INITIAL_SCHEMA = r"""
 CREATE TABLE IF NOT EXISTS database_migrations (
     version INTEGER PRIMARY KEY,

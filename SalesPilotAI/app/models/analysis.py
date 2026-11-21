@@ -32,6 +32,15 @@ class ReplySuggestion(BaseModel):
     use_case: str = Field(min_length=1)
 
 
+class KnowledgeReference(BaseModel):
+    """本次分析明确引用的知识库事实。"""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    source: str = Field(min_length=1)
+    fact: str = Field(min_length=1)
+
+
 class SalesAnalysis(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
@@ -55,6 +64,7 @@ class SalesAnalysis(BaseModel):
     followup_suggestion: str
     unknown_information: list[str]
     memory_suggestions: list[MemorySuggestion] = Field(default_factory=list)
+    knowledge_references: list[KnowledgeReference] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_reply_types(self):
