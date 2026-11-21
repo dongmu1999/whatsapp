@@ -51,6 +51,7 @@ from app.ui.customer_page import CustomerPage
 from app.ui.dashboard import DashboardPage
 from app.ui.followup_page import FollowupPage
 from app.ui.knowledge_page import KnowledgePage
+from app.ui.onboarding_dialog import FirstRunGuideDialog
 from app.ui.settings_page import SettingsPage
 from app.ui.theme import DARK_THEME, LIGHT_THEME, VALID_THEMES, apply_theme
 
@@ -75,6 +76,7 @@ class MainWindow(QMainWindow):
         self.settings = SettingsRepository(database)
         saved_theme = self.settings.get("theme", LIGHT_THEME)
         self.current_theme = saved_theme if saved_theme in VALID_THEMES else LIGHT_THEME
+        self.onboarding_dialog: FirstRunGuideDialog | None = None
 
         self.backup_service = BackupService(
             self.database, get_data_dir(), settings=self.settings
@@ -140,7 +142,7 @@ class MainWindow(QMainWindow):
         safety.setWordWrap(True)
         safety.setContentsMargins(22, 8, 16, 8)
         sidebar_layout.addWidget(safety)
-        version = QLabel(f"V{APP_VERSION} · 阶段 8")
+        version = QLabel(f"V{APP_VERSION} · 阶段 9")
         version.setObjectName("sidebarVersion")
         version.setContentsMargins(22, 0, 12, 0)
         sidebar_layout.addWidget(version)
@@ -305,6 +307,32 @@ class MainWindow(QMainWindow):
             10_000,
         )
 
+    def show_first_run_guide(self) -> None:
+        """首次启动时显示非模态引导；完成或跳过后由设置控制。"""
+        if self.settings.get("onboarding_completed") == "1":
+            return
+        if self.onboarding_dialog is not None:
+            self.onboarding_dialog.show()
+            self.onboarding_dialog.raise_()
+            self.onboarding_dialog.activateWindow()
+            return
+        dialog = FirstRunGuideDialog(self)
+        dialog.setAttribute(Qt.WA_DeleteOnClose)
+        dialog.start_requested.connect(self._finish_onboarding)
+        dialog.finished.connect(self._clear_onboarding_dialog)
+        self.onboarding_dialog = dialog
+        dialog.show()
+
+    def _finish_onboarding(self) -> None:
+        self.settings.set("onboarding_completed", "1")
+        self.navigation.setCurrentRow(6)
+        self.statusBar().showMessage(
+            "请在“AI 模型设置”中填写并安全保存 DeepSeek API Key。", 10_000
+        )
+
+    def _clear_onboarding_dialog(self) -> None:
+        self.onboarding_dialog = None
+
     def refresh_after_restore(self) -> None:
         """恢复或清空数据后刷新所有页面，避免展示旧数据。"""
         saved_theme = self.settings.get("theme", LIGHT_THEME)
@@ -377,6 +405,8 @@ class MainWindow(QMainWindow):
             self.settings_page.set_theme(self.current_theme)
 
     def closeEvent(self, event) -> None:
+        if hasattr(self, "reminder_timer"):
+            self.reminder_timer.stop()
         if hasattr(self, "hotkey_manager"):
             self.hotkey_manager.stop()
         super().closeEvent(event)

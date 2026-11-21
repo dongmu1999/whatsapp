@@ -93,3 +93,9 @@ def test_window_supports_target_resolution(window, application):
     assert window.width() == 1366
     assert window.height() == 768
     assert window.dashboard.isVisible()
+
+
+def test_closing_window_stops_reminder_timer(window):
+    assert window.reminder_timer.isActive()
+    window.close()
+    assert not window.reminder_timer.isActive()

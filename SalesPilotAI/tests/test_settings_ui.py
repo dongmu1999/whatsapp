@@ -56,7 +56,7 @@ def test_settings_page_exposes_backup_and_privacy_controls(page, services):
     assert page.restore_button.isEnabled()
     assert page.backup_dir_edit.text() == str(data_dir / "backups")
     assert page.retention_spin.value() == 0
-    assert "阶段 8" in page.version_label.text()
+    assert "阶段 9" in page.version_label.text()
 
 
 def test_backup_button_creates_archive(page, services):
@@ -124,17 +124,17 @@ def test_clean_screenshots_from_page(page, services):
     assert "临时截图" in page.privacy_status_label.text()
 
 
-def test_main_window_wires_stage_eight_services(application, database, tmp_path, monkeypatch):
+def test_main_window_wires_stage_nine_services(application, database, tmp_path, monkeypatch):
     monkeypatch.setenv("SALESPILOT_DATA_DIR", str(tmp_path))
     window = MainWindow(database)
 
     try:
         assert window.settings_page.backup_service is not None
         assert window.settings_page.maintenance_service is not None
-        assert "阶段 8" in window.settings_page.version_label.text()
+        assert "阶段 9" in window.settings_page.version_label.text()
         sidebar_version = window.findChild(QLabel, "sidebarVersion")
         assert sidebar_version is not None
-        assert "阶段 8" in sidebar_version.text()
+        assert "阶段 9" in sidebar_version.text()
         window.refresh_after_restore()
     finally:
         window.close()

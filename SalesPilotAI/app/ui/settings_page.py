@@ -99,7 +99,7 @@ class SettingsPage(QWidget):
         data_path.setObjectName("dataPath")
         form.addRow("本地数据目录", data_path)
 
-        self.version_label = QLabel(f"SalesPilot AI V{APP_VERSION} · 阶段 8")
+        self.version_label = QLabel(f"SalesPilot AI V{APP_VERSION} · 阶段 9")
         self.version_label.setObjectName("mutedText")
         form.addRow("当前版本", self.version_label)
         return card

@@ -4,7 +4,7 @@
 
 面向外贸销售人员的 Windows 本地桌面软件。软件仅提供聊天整理、销售分析和回复辅助，不自动发送消息、不自动群发、不读取 WhatsApp 私有数据库、不绕过登录或加密，也不进行后台持续监听。
 
-> 当前严格交付至 **阶段 8：备份恢复**。已实现本地数据 ZIP 备份与校验恢复、恢复前自动安全备份、聊天保留期限、临时截图清理、清空全部业务数据、统一本地日志与未捕获异常提示；阶段 9 Windows 安装包尚未开始。
+> 当前严格交付至 **阶段 9：Windows 打包**。已提供 PyInstaller onedir 打包配置、Inno Setup 简体中文安装/卸载脚本、首次启动引导、打包后自检模式和 Windows 一键构建脚本；Windows EXE 与安装包需在 Windows 10/11 构建机上生成。
 
 ## 阶段 1 已完成
 
@@ -179,9 +179,35 @@
 - 设置页改为可滚动布局，1366×768 及更小窗口下仍可访问全部卡片。
 - 版本标识更新为“阶段 8”，恢复或清空数据后自动刷新工作台、聊天分析、客户、历史、知识库、跟进和设置页，避免继续显示旧数据。
 
+## 阶段 9 已完成
+
+### Windows EXE 与安装程序
+
+- 提供 PyInstaller **onedir** 配置 `packaging/SalesPilotAI.spec`，入口为 `main.py`，输出 `dist/SalesPilotAI/SalesPilotAI.exe` 及 `_internal` 运行时目录。
+- 打包时包含 `assets`（主题 QSS 与图标），使用 `sys._MEIPASS` 定位只读资源；用户数据库、日志、备份和知识库仍写入独立数据目录，不写入安装目录。
+- 排除 PaddleOCR/PaddlePaddle、PyTorch、pytest、其他 Qt 绑定等可选或开发组件；OCR 仍按需延迟导入，未安装时不影响手动粘贴与本地保存。
+- 提供 Inno Setup 6.5+ 简体中文安装脚本 `packaging/installer.iss`：按当前用户安装、无需管理员权限，创建开始菜单快捷方式、可选桌面快捷方式和卸载程序。
+- 卸载程序删除安装目录中的应用文件，但**不删除** `%LOCALAPPDATA%\SalesPilotAI` 下的客户数据库、日志、备份、知识库副本和凭据；需要彻底删除时应先在软件内使用“清空全部数据”并手动处理数据目录。
+- 安装包输出目标为 `dist/installer/SalesPilotAI-Setup-1.0.0.exe`，包含 EXE 版本信息和应用图标；该文件需在 Windows 构建机上生成。
+- 新增 `scripts/build_windows.ps1` 与 `scripts/build_windows.bat`：创建独立构建虚拟环境、安装依赖、运行测试、执行 PyInstaller、以 `--smoke-test` 启动打包后的 EXE 并检查数据库初始化，最后调用 ISCC 生成安装包。
+
+### 首次启动与本地数据库
+
+- 主程序启动时继续自动创建数据目录、初始化 SQLite、执行迁移并记录日志；打包后首次启动无需预置数据库。
+- 首次启动显示非模态中文引导，说明配置 DeepSeek API Key、WhatsApp 捕获快捷键 `Ctrl+Shift+A`、分析确认和本地备份；点击“开始配置 API Key”会跳转到“AI 模型设置”，点击“稍后设置”可在下次启动再次查看。
+- 完成引导后写入 `onboarding_completed` 设置；备份恢复会保留或恢复该设置，不会反复打扰用户。
+- 新增 `--smoke-test` 启动参数：创建窗口、初始化数据库并处理事件后自动退出，供打包脚本在真实 Windows 上验证 EXE 可启动；该模式不显示首次引导和全局异常弹窗。
+
+### 构建与验证边界
+
+- 本次在 Linux 环境完成了 PyInstaller onedir 实际构建，并用打包产物执行 `--smoke-test`，验证入口、Qt 依赖、资源定位和数据库初始化。
+- PyInstaller **不能跨平台生成 Windows EXE**，Inno Setup 也仅能在 Windows 上运行；本仓库不包含预编译的 Windows 安装包，需按下方步骤在 Windows 构建机生成。
+- 源码测试覆盖打包文件存在性、版本一致性、安装器中文/按用户/保留用户数据、spec 资源与排除项、冻结资源路径、`--smoke-test` 数据库初始化及首次引导流程；Windows 安装/卸载本身仍需真实 Windows 人工验收。
+
 ## 尚未实现
 
-阶段 9 Windows 安装包不在本次交付范围内。
+- 仓库当前未附带预编译的 Windows EXE/安装包；需要在 Windows 10/11 构建机上运行 `scripts/build_windows.ps1` 生成。
+- 代码签名、自动更新、崩溃上报、系统托盘常驻和安装包多语言尚未实现；未签名的 EXE 可能触发 Windows SmartScreen 提示。
 
 ## 运行环境
 
@@ -224,6 +250,8 @@ OCR 依赖体积较大，因此没有强制加入基础依赖。需要 OCR 时�
 
 如果当前 Python 或平台没有兼容版本，请使用手动粘贴；不要通过不兼容的强制安装替代官方支持矩阵。OCR 本身在本地运行；只有用户在阶段 4 分析确认框中明确同意后，所选预览消息才会发送到配置的 DeepSeek 接口。
 
+PyInstaller 安装包默认在 `packaging/SalesPilotAI.spec` 中排除 PaddleOCR/PaddlePaddle 以控制体积。若需要安装版支持 OCR，必须在 Windows 构建机安装匹配的 OCR 依赖，并从 `excludes` 中移除相应模块后重新打包；否则安装版仍可使用手动粘贴和本地保存。
+
 ### 自动化测试
 
 ```powershell
@@ -236,7 +264,77 @@ Linux 无图形环境：
 QT_QPA_PLATFORM=offscreen python -m pytest -q
 ```
 
-## 阶段 3—8 使用流程
+## Windows 打包与安装
+
+### 构建环境
+
+- Windows 10/11 x64
+- Python 3.12 或更高版本
+- Inno Setup 6.5 或更高版本（安装后提供 `ISCC.exe`）
+- 构建机可访问 Python 包源，用于安装 `requirements.txt` 与 `requirements-build.txt`
+
+### 一键构建
+
+在项目根目录打开 PowerShell：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1
+```
+
+也可双击或运行：
+
+```powershell
+scripts\build_windows.bat
+```
+
+脚本会依次创建 `.venv-build` 构建环境、安装运行与打包依赖、执行全部自动化测试、调用 PyInstaller、用 `--smoke-test` 启动打包后的 EXE 并检查数据库初始化，最后调用 Inno Setup 生成安装包。
+
+产物：
+
+```text
+dist\SalesPilotAI\SalesPilotAI.exe          # 绿色版 EXE（需同目录 _internal）
+dist\installer\SalesPilotAI-Setup-1.0.0.exe # 简体中文安装程序
+```
+
+常用参数：
+
+```powershell
+# 只构建 EXE，不生成安装包
+powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -SkipInstaller
+
+# 调试时复用已有构建环境
+powershell -ExecutionPolicy Bypass -File scripts\build_windows.ps1 -ReuseVenv
+```
+
+`-SkipTests` 仅用于本地调试打包配置，正式交付不应跳过测试。若构建失败，脚本返回非零退出码，不会把旧安装包误报为成功。
+
+### 手动构建（排查问题）
+
+```powershell
+py -3.12 -m venv .venv-build
+.venv-build\Scripts\python.exe -m pip install -r requirements.txt -r requirements-build.txt
+.venv-build\Scripts\python.exe -m pytest -q
+.venv-build\Scripts\python.exe -m PyInstaller --noconfirm --clean packaging\SalesPilotAI.spec
+
+$env:SALESPILOT_DATA_DIR = "$env:TEMP\SalesPilotAI-smoke"
+dist\SalesPilotAI\SalesPilotAI.exe --smoke-test
+
+& "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe" `
+  /DMyAppVersion=1.0.0 `
+  /DSourceDir="$PWD\dist\SalesPilotAI" `
+  /DOutputDir="$PWD\dist\installer" `
+  packaging\installer.iss
+```
+
+### 安装与卸载
+
+- 安装程序为当前用户安装，默认目录为 `%LOCALAPPDATA%\Programs\SalesPilotAI`，无需管理员权限。
+- 安装器创建开始菜单快捷方式，桌面快捷方式为可选任务；卸载入口位于开始菜单。
+- 卸载只删除安装目录中的程序文件，不删除 `%LOCALAPPDATA%\SalesPilotAI` 下的数据库、日志、备份、知识库副本和 Windows 凭据。
+- 如需彻底清除，先在软件“系统设置”中使用“清空全部数据”，再手动删除数据目录。
+- 安装包和 EXE 当前**未做代码签名**，Windows SmartScreen 可能提示“未知发布者”；正式分发前建议购买代码签名证书。
+
+## 阶段 3—9 使用流程
 
 1. 打开“AI 模型设置”，填写自己的 DeepSeek API Key，核对 Base URL 和账户可用模型，点击“安全保存设置”，再点击“测试连接”。测试会发送一条极短测试消息。
 2. 打开 WhatsApp Desktop / Business，进入客户聊天并让需要整理的消息可见。
@@ -258,6 +356,8 @@ QT_QPA_PLATFORM=offscreen python -m pytest -q
 18. 需要恢复时点击“从备份恢复”并选择 ZIP。仔细阅读确认提示；软件会先创建 `salespilot-pre-restore-*.zip` 安全备份，再校验和替换数据。恢复失败会回滚并显示中文原因。
 19. 在“隐私与数据保留”中设置聊天保留期限，0 天表示永久保留。启动软件时会自动清理超过期限的会话及消息，客户档案、分析和客户记忆不受影响。
 20. 可点击“立即清理过期聊天”或“清理临时截图”手动清理；需要彻底删除业务数据时使用“清空全部数据”。该操作保留主题、系统设置和数据库迁移记录，且不可撤销。
+21. 首次启动会显示中文引导：可点击“开始配置 API Key”直接进入“AI 模型设置”，或点击“稍后设置”在下次启动再次查看。完成引导后不再重复弹出。
+22. 安装版从开始菜单启动；卸载程序不会删除本地客户数据。打包后的 EXE 可用 `--smoke-test` 做启动自检，该模式不会显示首次引导。
 
 ## 本地数据、截图与网络边界
 
@@ -268,6 +368,8 @@ Windows 默认数据库位置：
 ```
 
 日志位于同目录的 `logs` 子目录。开发和测试可通过 `SALESPILOT_DATA_DIR` 指定隔离目录。
+
+安装版默认安装到 `%LOCALAPPDATA%\Programs\SalesPilotAI`，首次启动时自动创建上述数据目录；卸载程序不会删除数据目录，也不会删除 Windows 凭据库中的 API Key。
 
 - 捕获截图使用系统临时目录，正常识别成功/失败路径都会立即尝试删除。
 - 用户主动导入的原始截图仍由用户管理，软件不会删除。
@@ -290,7 +392,19 @@ Windows 默认数据库位置：
 SalesPilotAI/
 ├── main.py
 ├── requirements.txt
+├── requirements-build.txt      # Windows 打包工具（PyInstaller）
 ├── README.md
+├── assets/
+│   ├── salespilot.ico          # EXE 与安装程序图标
+│   └── styles/
+├── packaging/
+│   ├── SalesPilotAI.spec       # PyInstaller onedir 配置
+│   ├── installer.iss           # Inno Setup 6.5+ 中文安装脚本
+│   ├── version_info.txt        # Windows EXE 版本资源
+│   └── ChineseSimplified.isl   # 安装界面简体中文
+├── scripts/
+│   ├── build_windows.ps1       # 测试 → EXE → 自检 → 安装包
+│   └── build_windows.bat
 ├── app/
 │   ├── capture/
 │   │   ├── windows.py          # 前台窗口与 UIA 只读适配
@@ -335,6 +449,7 @@ SalesPilotAI/
 │       ├── customer_history_page.py
 │       ├── knowledge_page.py   # 知识库导入、搜索、预览与产品维护
 │       ├── followup_page.py    # 跟进创建、筛选与结果记录
+│       ├── onboarding_dialog.py # 首次启动中文引导
 │       ├── workers.py          # 无 SQLite 操作的后台网络任务
 │       ├── region_selector.py
 │       ├── customer_page.py
@@ -358,21 +473,24 @@ SalesPilotAI/
     ├── test_backup.py
     ├── test_maintenance.py
     ├── test_settings_ui.py
+    ├── test_onboarding.py
+    ├── test_packaging.py
     ├── test_database.py
     └── test_ui.py
 ```
 
-## 阶段 1—8 验证记录
+## 阶段 1—9 验证记录
 
 验证日期：2026-11-21。
 
 - Python `compileall` 语法编译检查通过。
-- 自动化测试：**157 passed**，覆盖数据库、客户管理、聊天捕获、预览编辑、DeepSeek 参数与中文错误、安全凭据、脱敏、JSON 校验及一次修复重试、三种回复、分析成功/失败事务、逐请求用量、上传确认/取消、后台线程、客户记忆隔离、AI 建议待确认、去重、摘要分组、历史检索、六类知识文件解析、重复/空文件/扫描 PDF 错误、全文与分类检索、更新/删除索引、旧库升级、相关知识检索、产品资料维护、知识库引用、跟进时间转换、状态流转、逾期/今日查询、AI 跟进草稿不自动创建、本地提醒、ZIP 备份清单与哈希、唯一命名、文件数据库与内存数据库恢复、知识库替换、恢复前安全备份、不安全路径/非法 ZIP/缺失清单/哈希不一致/过高版本拒绝、失败不改数据、数据库重连、保留期限校验与过期会话清理、临时截图清理、清空全部业务数据保留设置、设置页备份/恢复/清理交互、启动时自动执行聊天保留期限和主窗口阶段 8 集成。
-- `main.py` 离屏完整启动与退出冒烟测试：退出码 **0**。
+- 自动化测试：**167 passed**，覆盖数据库、客户管理、聊天捕获、预览编辑、DeepSeek 参数与中文错误、安全凭据、脱敏、JSON 校验及一次修复重试、三种回复、分析成功/失败事务、逐请求用量、上传确认/取消、后台线程、客户记忆隔离、AI 建议待确认、去重、摘要分组、历史检索、六类知识文件解析、重复/空文件/扫描 PDF 错误、全文与分类检索、更新/删除索引、旧库升级、相关知识检索、产品资料维护、知识库引用、跟进时间转换、状态流转、逾期/今日查询、AI 跟进草稿不自动创建、本地提醒、ZIP 备份清单与哈希、唯一命名、文件数据库与内存数据库恢复、知识库替换、恢复前安全备份、不安全路径/非法 ZIP/缺失清单/哈希不一致/过高版本拒绝、失败不改数据、数据库重连、保留期限校验与过期会话清理、临时截图清理、清空全部业务数据保留设置、设置页备份/恢复/清理交互、启动时自动执行聊天保留期限、首次启动引导只完成一次/稍后再次显示、打包文件与版本一致性、安装器中文/按用户/不删用户数据、spec 资源与排除项、冻结资源路径、`--smoke-test` 数据库初始化，以及关闭窗口停止提醒定时器。
+- `main.py --smoke-test` 离屏启动冒烟：退出码 **0**，自动创建 `salespilot.db`（200,704 字节）。
 - 阶段 8 离屏端到端冒烟：创建客户和知识库文件 → 备份 → 新增客户 → 恢复 → 客户数据与知识库回退、工作台刷新 → 清空全部数据，退出码 **0**。
-- 1366×768 离屏窗口中，8 项导航、设置页可滚动布局、备份/恢复/隐私控件、阶段 8 标识、原有聊天分析页、客户历史、产品知识库、跟进任务、AI 模型设置和空状态检查通过。
+- PyInstaller 6.17.0 在 Linux 上按 `packaging/SalesPilotAI.spec` 实际完成 **onedir** 构建（约 246 MB），打包产物执行 `--smoke-test` 退出码 **0**，并确认 `_internal/assets/salespilot.ico` 被正确打入。
+- 1366×768 离屏窗口中，8 项导航、设置页可滚动布局、备份/恢复/隐私控件、阶段 9 标识、首次启动引导、原有聊天分析页、客户历史、产品知识库、跟进任务、AI 模型设置和空状态检查通过。
 - `pip check`：**No broken requirements found**。
-- 验证环境：Linux、Python 3.14.8、PySide6 6.11.3、openpyxl 3.1.5、mss 10.1.0、OpenAI SDK 2.54.0、Pydantic 2.13.4、keyring 25.7.0、pypdf 6.16.2、python-docx 1.2.0、SQLite FTS5（trigram）。
+- 验证环境：Linux、Python 3.14.8、PySide6 6.11.3、PyInstaller 6.17.0、openpyxl 3.1.5、mss 10.1.0、OpenAI SDK 2.54.0、Pydantic 2.13.4、keyring 25.7.0、pypdf 6.16.2、python-docx 1.2.0、SQLite FTS5（trigram）。
 
 ### 真实平台与 API 验证限制
 
@@ -385,7 +503,11 @@ SalesPilotAI/
 - 聊天保留期限使用 UTC 文本比较，已由固定时间测试覆盖，但**尚未**在真实长期数据、系统时区变更、夏令时和跨年数据下验收自动清理。
 - 临时截图清理基于系统临时目录和文件修改时间，**尚未**验证文件被其他程序占用、权限不足或临时目录被安全软件重定向时的行为。
 - 清空全部数据会删除知识库记录和文件副本，已由测试覆盖；**尚未**在真实用户数据上执行人工验收，也未提供回收站式恢复。
-- 全局未捕获异常钩子与统一日志**尚未**在真实 Windows 桌面和打包环境中验证；阶段 9 安装包、签名和自动更新尚未实现。
+- **尚未生成或验证 Windows EXE/安装包**：本次只在 Linux 上用 PyInstaller 构建 onedir 并运行打包产物；PyInstaller 不能跨平台产出 Windows EXE，当前环境也没有 Inno Setup/Wine。必须在 Windows 10/11 构建机执行 `scripts/build_windows.ps1` 后验收。
+- **尚未**在真实 Windows 上验证安装目录、开始菜单/桌面快捷方式、按用户安装、覆盖升级、卸载、SmartScreen 提示、文件占用导致升级失败，以及 `%LOCALAPPDATA%\Programs` 权限策略；安装器与卸载器也未做数字签名。
+- `--smoke-test` 的打包验证在 Linux 产物上通过，但**尚未**在 Windows 打包产物上执行；首次启动引导与 `--smoke-test` 的交互也只由离屏测试覆盖。
+- **尚未**验证 Windows 打包产物中的 pywinauto/UIA、keyring Windows 凭据后端、mss 截图、全局快捷键和 PaddleOCR；打包时已排除 OCR 可选组件，若这些平台能力不可用，应回退到手动粘贴和本地保存。
+- 全局未捕获异常钩子与统一日志**尚未**在真实 Windows 桌面中验证；代码签名、自动更新、崩溃上报和系统托盘尚未实现。
 - **尚未**使用真实 DeepSeek 账户验证 AI 给出的跟进天数是否合理，也未验证真实模型在“是否需要跟进”上的稳定性；fake 测试只验证字段范围、草稿转换和人工创建流程。
 - 跟进提醒仅在软件运行期间每 60 秒检查一次；**尚未**验证系统休眠唤醒、跨时区/夏令时切换、长时间运行或大量逾期任务下的提醒体验，也未实现系统通知或托盘常驻。
 - 跟进状态流转、逾期判断和本地时区转换已由自动化测试覆盖，但**尚未**在真实 Windows 环境中进行人工验收。
@@ -403,4 +525,4 @@ SalesPilotAI/
 - **尚未**进行 PaddleOCR 实际模型推理和中英文识别准确率验收。
 - 自动化测试通过 fake 适配器验证编排、降级、清理、请求参数和界面行为，不代表上述真实平台或云端能力已经验收。
 
-真实 Windows 交付前仍需按使用流程逐项人工验收，尤其要检查系统凭据后端、DeepSeek 实际模型与 JSON 输出、真实产品资料解析与检索质量、不同 WhatsApp 版本的 UIA 文本结构、DPI/多显示器坐标、OCR 安装兼容性、跟进提醒在休眠/跨时区场景下的表现，以及备份恢复在真实 Windows 文件系统上的文件锁、磁盘空间和备份文件保护。
+真实 Windows 交付前仍需按使用流程逐项人工验收，尤其要检查系统凭据后端、DeepSeek 实际模型与 JSON 输出、真实产品资料解析与检索质量、不同 WhatsApp 版本的 UIA 文本结构、DPI/多显示器坐标、OCR 安装兼容性、跟进提醒在休眠/跨时区场景下的表现，以及备份恢复在真实 Windows 文件系统上的文件锁、磁盘空间和备份文件保护；同时需在 Windows 构建机生成 EXE/安装包并完成安装、升级、卸载和 SmartScreen 验收。

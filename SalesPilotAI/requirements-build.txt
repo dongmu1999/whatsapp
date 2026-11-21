@@ -1,0 +1,2 @@
+# Windows build tools only; the application itself uses requirements.txt.
+pyinstaller>=6.10,<7.0

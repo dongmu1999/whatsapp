@@ -46,12 +46,16 @@ def _install_exception_hook(logger: logging.Logger) -> None:
     sys.excepthook = handler
 
 
-def main() -> int:
-    application = create_application()
+def main(arguments: list[str] | None = None) -> int:
+    arguments = list(sys.argv if arguments is None else arguments)
+    smoke_test = "--smoke-test" in arguments
+    qt_arguments = [argument for argument in arguments if argument != "--smoke-test"]
+    application = create_application(qt_arguments)
     data_dir = ensure_data_dir()
     setup_logging(data_dir / "logs")
     logger = logging.getLogger("salespilot.main")
-    _install_exception_hook(logger)
+    if not smoke_test:
+        _install_exception_hook(logger)
 
     try:
         database = Database(get_database_path())
@@ -80,8 +84,16 @@ def main() -> int:
         return 1
 
     window.show()
+    if not smoke_test:
+        window.show_first_run_guide()
     application.aboutToQuit.connect(database.close)
     logger.info("SalesPilot AI 已启动")
+    if smoke_test:
+        application.processEvents()
+        logger.info("打包冒烟测试通过")
+        window.close()
+        database.close()
+        return 0
     try:
         return application.exec()
     except Exception:

@@ -11,7 +11,19 @@ APP_NAME_ZH = "WhatsApp 外贸销售智能助手"
 APP_VERSION = "1.0.0"
 ORGANIZATION_NAME = "SalesPilot"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-ASSETS_DIR = PROJECT_ROOT / "assets"
+
+
+def get_resource_dir() -> Path:
+    """返回源码或 PyInstaller 打包后的只读资源根目录。"""
+    if getattr(sys, "frozen", False):
+        bundle_dir = getattr(sys, "_MEIPASS", None)
+        if bundle_dir:
+            return Path(bundle_dir)
+        return Path(sys.executable).resolve().parent
+    return PROJECT_ROOT
+
+
+ASSETS_DIR = get_resource_dir() / "assets"
 
 
 def get_data_dir() -> Path:
