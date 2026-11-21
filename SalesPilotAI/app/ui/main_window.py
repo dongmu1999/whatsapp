@@ -35,8 +35,10 @@ from app.database.repositories.knowledge_repository import KnowledgeRepository
 from app.database.repositories.memory_repository import MemoryRepository
 from app.database.repositories.settings_repository import SettingsRepository
 from app.services.ai_settings_service import AISettingsService
+from app.services.backup_service import BackupService
 from app.services.conversation_service import ConversationService
 from app.services.customer_service import CustomerService
+from app.services.data_maintenance_service import DataMaintenanceService
 from app.services.deepseek_service import DeepSeekClient
 from app.services.followup_service import FollowupService
 from app.services.knowledge_service import KnowledgeService
@@ -73,6 +75,17 @@ class MainWindow(QMainWindow):
         self.settings = SettingsRepository(database)
         saved_theme = self.settings.get("theme", LIGHT_THEME)
         self.current_theme = saved_theme if saved_theme in VALID_THEMES else LIGHT_THEME
+
+        self.backup_service = BackupService(
+            self.database, get_data_dir(), settings=self.settings
+        )
+        self.maintenance_service = DataMaintenanceService(
+            self.database, get_data_dir(), settings=self.settings
+        )
+        try:
+            self.maintenance_service.apply_retention()
+        except Exception:
+            logger.exception("启动时自动清理过期聊天失败")
 
         self.setWindowTitle(f"{APP_NAME} · {APP_NAME_ZH}")
         self.setObjectName("mainWindow")
@@ -127,7 +140,7 @@ class MainWindow(QMainWindow):
         safety.setWordWrap(True)
         safety.setContentsMargins(22, 8, 16, 8)
         sidebar_layout.addWidget(safety)
-        version = QLabel(f"V{APP_VERSION} · 阶段 7")
+        version = QLabel(f"V{APP_VERSION} · 阶段 8")
         version.setObjectName("sidebarVersion")
         version.setContentsMargins(22, 0, 12, 0)
         sidebar_layout.addWidget(version)
@@ -215,8 +228,18 @@ class MainWindow(QMainWindow):
             ai_settings_service, deepseek_client, usage_repository
         )
         self.pages.addWidget(self.ai_settings_page)
-        self.settings_page = SettingsPage(self.current_theme, get_data_dir())
+        self.settings_page = SettingsPage(
+            self.current_theme,
+            get_data_dir(),
+            backup_service=self.backup_service,
+            maintenance_service=self.maintenance_service,
+            settings_repository=self.settings,
+        )
         self.settings_page.theme_requested.connect(self.set_theme)
+        self.settings_page.status_message.connect(
+            lambda message: self.statusBar().showMessage(message, 8000)
+        )
+        self.settings_page.data_restored.connect(self.refresh_after_restore)
         self.pages.addWidget(self.settings_page)
 
         self.chat_analysis_page.customers_changed.connect(self.dashboard.refresh)
@@ -282,6 +305,22 @@ class MainWindow(QMainWindow):
             10_000,
         )
 
+    def refresh_after_restore(self) -> None:
+        """恢复或清空数据后刷新所有页面，避免展示旧数据。"""
+        saved_theme = self.settings.get("theme", LIGHT_THEME)
+        if saved_theme in VALID_THEMES and saved_theme != self.current_theme:
+            self.set_theme(saved_theme)
+        self.dashboard.refresh()
+        self.chat_analysis_page.refresh_customers()
+        self.customer_page.refresh()
+        self.customer_history_page.refresh_customers()
+        self.knowledge_page.refresh()
+        self.followup_page.refresh_customers()
+        self.followup_page.refresh()
+        self.settings_page.refresh_state()
+        self.check_followup_reminders()
+        self.statusBar().showMessage("本地数据已更新，界面已刷新。", 6000)
+
     def navigate(self, index: int) -> None:
         if not 0 <= index < self.pages.count():
             return
@@ -300,6 +339,8 @@ class MainWindow(QMainWindow):
         elif index == 5:
             self.followup_page.refresh_customers()
             self.followup_page.refresh()
+        elif index == 7:
+            self.settings_page.refresh_state()
 
     def set_capture_hotkey(self, sequence: str) -> None:
         if sys.platform != "win32":

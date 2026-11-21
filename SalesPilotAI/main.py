@@ -24,11 +24,34 @@ def create_application(arguments: list[str] | None = None) -> QApplication:
     return application
 
 
+def _install_exception_hook(logger: logging.Logger) -> None:
+    """记录未捕获异常并给出中文提示，避免界面直接退出。"""
+
+    def handler(exc_type, exc_value, exc_traceback) -> None:
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        logger.critical(
+            "未捕获异常", exc_info=(exc_type, exc_value, exc_traceback)
+        )
+        try:
+            QMessageBox.critical(
+                None,
+                "SalesPilot AI 发生错误",
+                f"程序遇到未处理的错误，已记录到日志。\n\n{exc_value}",
+            )
+        except Exception:
+            pass
+
+    sys.excepthook = handler
+
+
 def main() -> int:
     application = create_application()
     data_dir = ensure_data_dir()
     setup_logging(data_dir / "logs")
     logger = logging.getLogger("salespilot.main")
+    _install_exception_hook(logger)
 
     try:
         database = Database(get_database_path())
@@ -44,11 +67,26 @@ def main() -> int:
         )
         return 1
 
-    window = MainWindow(database)
+    try:
+        window = MainWindow(database)
+    except Exception as exc:
+        logger.exception("主窗口初始化失败")
+        QMessageBox.critical(
+            None,
+            "SalesPilot AI 启动失败",
+            f"无法创建主窗口，已记录日志。\n\n{exc}",
+        )
+        database.close()
+        return 1
+
     window.show()
     application.aboutToQuit.connect(database.close)
     logger.info("SalesPilot AI 已启动")
-    return application.exec()
+    try:
+        return application.exec()
+    except Exception:
+        logger.exception("程序运行时发生未捕获异常")
+        return 1
 
 
 if __name__ == "__main__":

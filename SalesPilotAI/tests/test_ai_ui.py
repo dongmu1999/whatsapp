@@ -116,7 +116,7 @@ def test_main_window_integrates_phase_four_pages(
         assert window.pages.widget(6) is window.ai_settings_page
         assert window.chat_analysis_page.analysis_service is not None
         version = window.findChild(QLabel, "sidebarVersion")
-        assert "阶段 7" in version.text()
+        assert "阶段 8" in version.text()
     finally:
         window.close()
 

@@ -7,13 +7,22 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
+class _AppLogFilter(logging.Filter):
+    """只记录本应用日志，避免第三方库把无关内容写入本地日志。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.name == "app" or record.name.startswith(
+            ("app.", "salespilot")
+        )
+
+
 def setup_logging(log_dir: Path) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("salespilot")
-    if logger.handlers:
+    root = logging.getLogger()
+    if root.handlers:
         return
 
-    logger.setLevel(logging.INFO)
+    root.setLevel(logging.INFO)
     handler = RotatingFileHandler(
         log_dir / "salespilot.log",
         maxBytes=2 * 1024 * 1024,
@@ -23,5 +32,5 @@ def setup_logging(log_dir: Path) -> None:
     handler.setFormatter(
         logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
     )
-    logger.addHandler(handler)
-    logger.propagate = False
+    handler.addFilter(_AppLogFilter())
+    root.addHandler(handler)

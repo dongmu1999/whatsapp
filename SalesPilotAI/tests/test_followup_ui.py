@@ -174,7 +174,7 @@ def test_main_window_uses_followup_page_and_local_reminder(
         assert isinstance(window.followup_page, FollowupPage)
         assert window.pages.widget(5) is window.followup_page
         version = window.findChild(QLabel, "sidebarVersion")
-        assert "阶段 7" in version.text()
+        assert "阶段 8" in version.text()
 
         overdue = window.followup_service.create(
             window.customer_service.create({"name": "Alice"}).id,

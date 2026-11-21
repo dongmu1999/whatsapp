@@ -149,6 +149,6 @@ def test_main_window_integrates_phase_six(application, database, tmp_path, monke
         assert window.pages.widget(4) is window.knowledge_page
         assert window.chat_analysis_page.knowledge_service is not None
         version = window.findChild(QLabel, "sidebarVersion")
-        assert "阶段 7" in version.text()
+        assert "阶段 8" in version.text()
     finally:
         window.close()

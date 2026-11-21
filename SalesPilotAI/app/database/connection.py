@@ -16,6 +16,10 @@ class Database:
         if self.path != ":memory:":
             Path(self.path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
 
+        self._closed = True
+        self._connect()
+
+    def _connect(self) -> None:
         # 使用自动提交模式，事务仅由 transaction() 和迁移器显式控制。
         self.connection = sqlite3.connect(
             self.path, timeout=5.0, isolation_level=None
@@ -27,6 +31,11 @@ class Database:
             self.connection.execute("PRAGMA journal_mode = WAL")
             self.connection.execute("PRAGMA synchronous = NORMAL")
         self._closed = False
+
+    def reconnect(self) -> None:
+        """关闭并重新打开同一路径的连接，用于恢复数据库文件后继续使用。"""
+        self.close()
+        self._connect()
 
     def initialize(self) -> list[int]:
         from app.database.migrations import MigrationManager
@@ -47,7 +56,10 @@ class Database:
 
     def close(self) -> None:
         if not self._closed:
-            self.connection.close()
+            try:
+                self.connection.close()
+            except sqlite3.Error:
+                pass
             self._closed = True
 
     def __enter__(self) -> "Database":
