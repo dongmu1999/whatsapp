@@ -102,12 +102,27 @@ LangString DESC_SEC_DESKTOP ${LANG_SIMPCHINESE} "在桌面创建 SalesPilot AI �
   !insertmacro MUI_DESCRIPTION_TEXT ${SEC_DESKTOP} $(DESC_SEC_DESKTOP)
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
+Function CheckAppRunning
+  check:
+  nsExec::ExecToStack '"$SYSDIR\tasklist.exe" /FI "IMAGENAME eq SalesPilotAI.exe" /NH /FO CSV'
+  Pop $0
+  Pop $1
+  StrCpy $2 $1 17
+  StrCmp $2 '"SalesPilotAI.exe' 0 done
+  MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL|MB_DEFBUTTON2 \
+    "SalesPilot AI 正在运行，无法覆盖安装文件。$\r$\n$\r$\n请先在任务管理器中结束所有 SalesPilotAI.exe，然后点击“重试”。" \
+    IDRETRY check
+  Abort
+  done:
+FunctionEnd
+
 Function .onInit
   ${IfNot} ${RunningX64}
     MessageBox MB_ICONSTOP "本安装包仅支持 64 位 Windows 10/11。"
     Abort
   ${EndIf}
   SetShellVarContext current
+  Call CheckAppRunning
 FunctionEnd
 
 Section "Uninstall"

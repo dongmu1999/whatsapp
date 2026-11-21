@@ -72,6 +72,8 @@ def test_nsis_installer_is_chinese_per_user_and_keeps_user_data():
     assert "CreateShortCut" in installer
     assert 'RMDir /r "$INSTDIR\\_internal"' in installer
     assert "RunningX64" in installer
+    assert "CheckAppRunning" in installer
+    assert "tasklist.exe" in installer
     assert "%LOCALAPPDATA%\\SalesPilotAI" in installer
     assert '!define MyAppVersion "1.0.0"' in installer
 
